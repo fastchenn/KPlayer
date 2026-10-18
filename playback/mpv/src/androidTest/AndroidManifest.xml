@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:usesCleartextTraffic="true">
+        <activity android:name="dev.davplayer.playback.mpv.MpvTestActivity"
+            android:exported="false" android:theme="@android:style/Theme.Material.NoActionBar" />
+    </application>
+</manifest>

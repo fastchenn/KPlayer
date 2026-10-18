@@ -19,10 +19,12 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
-      - run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+      - run: ./gradlew :playback:mpv:testDebugUnitTest :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :playback:mpv:assembleDebugAndroidTest --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: k-player-shell-debug
+          name: k-player-mpv-debug
           path: app/build/outputs/apk/debug/app-debug.apk

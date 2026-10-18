@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.davplayer.app.data.*
 import dev.davplayer.playback.api.PlaybackRequest
+import dev.davplayer.playback.api.ExternalSubtitle
 import dev.davplayer.playback.api.PlayerEngine
 import dev.davplayer.playback.mpv.MpvPlayerEngine
 import kotlinx.coroutines.*
@@ -46,7 +47,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         rememberPosition = preferences.getBoolean("remember_position", true),
     ))
     val state = mutableState.asStateFlow()
-    val engine: PlayerEngine = MpvPlayerEngine()
+    val engine: PlayerEngine = MpvPlayerEngine(application)
     private val messages = Channel<String>(Channel.BUFFERED)
     val notifications = messages.receiveAsFlow()
     private var browsingJob: Job? = null
@@ -94,15 +95,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshDirectory() { state.value.browser?.let { loadDirectory(it.server, it.url) } }
 
     fun openEntry(entry: MediaEntry) {
-        val server = state.value.browser?.server ?: return
+        val browser = state.value.browser ?: return
+        val server = browser.server
         if (entry.isDirectory) loadDirectory(server, entry.url)
         else if (entry.isVideo) {
             val headers = if (server.username.isNotEmpty() || server.password.isNotEmpty())
                 mapOf("Authorization" to Credentials.basic(server.username, server.password, Charsets.UTF_8)) else emptyMap()
             mutableState.update { it.copy(video = VideoTarget(server, entry)) }
+            if (server.isDemo) { engine.stop(); return }
             engine.open(PlaybackRequest(
                 mediaId = "${server.id}:${entry.url.toHttpUrl().encodedPath}",
-                url = entry.url, title = entry.name, headers = headers,
+                url = entry.url, title = entry.name, headers = headers, preferHardware = state.value.preferHardware,
+                externalSubtitles = matchingSubtitles(entry, browser.entries).map {
+                    ExternalSubtitle(url = it.url, title = it.name, headers = headers)
+                },
             ))
         }
     }

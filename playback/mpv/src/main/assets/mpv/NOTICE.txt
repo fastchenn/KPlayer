@@ -1,0 +1,23 @@
+K Player — mpv 原生组件
+
+来源：mpv-android 官方 2026-09-17 发布。
+https://github.com/mpv-android/mpv-android/releases/tag/2026-09-17
+JNI 源码：fdf74f6830c47dbaa8a22ac79726e8303f1db5af
+libmpv 源码：0b7ed670f7c353dd3dd4f8ae0fc788a181a15aa6
+
+此构建使用上游的 GPL 原生组件构建，包含：
+libmpv（GPL-2.0-or-later）、FFmpeg（GPL-3.0-or-later）、
+Mbed TLS（Apache-2.0 / GPL-2.0-or-later）、dav1d（BSD-2-Clause）、
+libxml2（MIT）、fontconfig（HPND）、FreeType（FTL / GPL-2.0-or-later）、
+FriBidi（LGPL-2.1-or-later）、HarfBuzz（MIT）、libunibreak（Zlib）、
+libass（ISC）、Lua（MIT）、libplacebo（LGPL-2.1-or-later）、curl（MIT）、
+Android NDK libc++（Apache-2.0 WITH LLVM-exception）。
+mpv-android 的 Kotlin/JNI 绑定代码使用 MIT 许可。
+
+版权声明和许可文本位于 APK 的 assets/mpv/licenses/ 目录。
+准确版本、原生包校验值、源码地址与重建说明位于项目的
+playback/mpv/THIRD_PARTY_NOTICES.md 和 native-dependencies.properties。
+上游完整源码和原生构建脚本：
+https://github.com/mpv-android/mpv-android/tree/fdf74f6830c47dbaa8a22ac79726e8303f1db5af
+
+发布包含这些原生组件的 APK 时，需要同时满足其 GPL/LGPL 等许可的源码提供义务。

@@ -19,6 +19,7 @@ data class MediaTrack(
     val label: String,
     val language: String? = null,
     val selected: Boolean = false,
+    val external: Boolean = false,
 )
 
 data class PlayerCapabilities(
@@ -36,8 +37,18 @@ data class PlaybackState(
     val durationMs: Long? = null,
     val speed: Float = 1f,
     val tracks: List<MediaTrack> = emptyList(),
+    val seekable: Boolean = false,
     val message: String? = null,
 )
+
+/** An explicitly discovered sidecar; credentials follow its own URL, not the video's redirect. */
+class ExternalSubtitle(
+    val url: String,
+    val title: String,
+    val headers: Map<String, String> = emptyMap(),
+) {
+    override fun toString() = "ExternalSubtitle(credentials=redacted)"
+}
 
 /** Credentials must never appear in logs or playback-history records. */
 class PlaybackRequest(
@@ -47,6 +58,8 @@ class PlaybackRequest(
     val headers: Map<String, String> = emptyMap(),
     val startPositionMs: Long = 0,
     val speed: Float = 1f,
+    val preferHardware: Boolean = true,
+    val externalSubtitles: List<ExternalSubtitle> = emptyList(),
 ) {
     override fun toString() = "PlaybackRequest(mediaId=$mediaId, credentials=redacted)"
 }
