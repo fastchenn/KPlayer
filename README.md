@@ -9,12 +9,10 @@
 实际 Android 界面截图，点击图片可查看原图。
 
 <p align="center">
-  <a href="docs/screenshots/home.jpg"><img src="docs/screenshots/home.jpg" alt="媒体库首页" height="360"></a>
-  <a href="docs/screenshots/browser.jpg"><img src="docs/screenshots/browser.jpg" alt="WebDAV 目录浏览" height="360"></a>
+  <a href="docs/screenshots/player-portrait.jpg"><img src="docs/screenshots/player-portrait.jpg" alt="竖屏播放与分段缓存白条" height="360"></a>
   <a href="docs/screenshots/history.jpg"><img src="docs/screenshots/history.jpg" alt="观看历史与断点续播" height="360"></a>
-  <a href="docs/screenshots/settings.jpg"><img src="docs/screenshots/settings.jpg" alt="缓存管理、播放设置与关于" height="360"></a>
 </p>
-<p align="center"><sub>媒体库首页 · 目录浏览 · 观看记录 · 缓存管理与关于</sub></p>
+<p align="center"><sub>横屏播放 · 观看记录</sub></p>
 
 <p align="center">
   <a href="docs/screenshots/player-landscape.jpg"><img src="docs/screenshots/player-landscape.jpg" alt="横屏全屏播放与分段缓存白条" width="900"></a>
