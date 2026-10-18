@@ -1,0 +1,32 @@
+DAV Player 0.1.0-shell — 构建验证记录
+日期：2026-10-18 15:42（Asia/Shanghai）
+
+已执行：
+  Gradle Wrapper --version：通过（Gradle 8.11.1，SHA-256 校验启用）
+  :app:testDebugUnitTest：13 项通过，0 项失败，0 项跳过
+  :app:lintDebug：通过，0 项错误，5 项警告
+  :app:assembleDebug：通过
+  apksigner verify：通过（调试签名，非应用商店发布签名）
+
+本机构建使用工作目录内的 JDK、SDK 和临时调试签名配置；源码默认使用
+Android Studio 的标准调试签名。签名私钥及本机路径配置未放入源码包。
+
+测试范围：
+  WebDAV PROPFIND/Depth:1、Basic 认证、中文及特殊字符路径、UTF-16 响应、
+  父目录/越界目录过滤、同源跳转方法保留、跨源跳转凭据隔离、认证错误提示。
+
+产品状态：
+  这是工程和界面壳子。连接保存、目录读取和离线示例已实现。
+  未包含 libmpv 原生二进制，不能实际播放视频；ExoPlayer 尚未实现。
+  播放控件明确禁用，不模拟观看进度，最近记录不生成虚假历史。
+
+尚未验证：
+  没有使用用户的真实 WebDAV 服务；未执行真机/模拟器 UI、音视频及 Keystore 运行测试。
+  APK 编译及签名验证不代表上述运行测试已完成。
+
+Lint 警告：
+  GradleDependency: A newer version of androidx.compose:compose-bom than 2025.04.01 is available: 2026.09.00
+  GradleDependency: A newer version of androidx.core:core-ktx than 1.15.0 is available: 1.19.1
+  GradleDependency: A newer version of androidx.activity:activity-compose than 1.10.1 is available: 1.13.0
+  GradleDependency: A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.8.7 is available: 2.11.0
+  GradleDependency: A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.8.7 is available: 2.11.0

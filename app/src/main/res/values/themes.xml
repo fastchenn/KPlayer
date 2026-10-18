@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.DavPlayer" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#A5E6CD</item>
+        <item name="android:windowBackground">#101715</item>
+    </style>
+</resources>
