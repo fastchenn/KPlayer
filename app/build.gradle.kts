@@ -12,12 +12,13 @@ android {
         applicationId = "dev.davplayer.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.2.3-mpv"
+        versionCode = 7
+        versionName = "0.2.5"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Match transitive native libraries to the ABI(s) provided by libmpv.
         ndk { abiFilters.addAll(providers.gradleProperty("mpvAbis").orElse("arm64-v8a").get().split(',').map(String::trim)) }
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -50,4 +51,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("junit:junit:4.13.2")
 }

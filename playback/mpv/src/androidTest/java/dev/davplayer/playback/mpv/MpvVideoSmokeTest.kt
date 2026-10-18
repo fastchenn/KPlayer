@@ -57,6 +57,10 @@ class MpvVideoSmokeTest {
 
     @Test fun rendersVideoAfterCrossOriginRedirectWithoutLeakingCredentials() = verifyVideoPlayback(redirect = true)
 
+    @Test fun persistsVideoOnAndroidAndReopensWithoutDownloadingCachedPayload() = verifyVideoPlayback(redirect = false, enableCache = true)
+
+    @Test fun cachesAndReopensRedirectedVideoWhenHeadIsUnsupported() = verifyVideoPlayback(redirect = true, enableCache = true, supportsHead = false)
+
     @Test fun rendersAuthenticatedSameFolderSrtAndSupportsDisableAndReopen() = verifySubtitlePlayback("srt")
 
     @Test fun rendersSameFolderAssAfterCrossOriginRedirect() = verifySubtitlePlayback("ass", redirect = true)
@@ -228,22 +232,26 @@ class MpvVideoSmokeTest {
         return pixels.count { android.graphics.Color.red(it) > 200 && android.graphics.Color.green(it) > 200 && android.graphics.Color.blue(it) > 200 }
     }
 
-    private fun verifyVideoPlayback(redirect: Boolean, missingSubtitle: Boolean = false) {
+    private fun verifyVideoPlayback(redirect: Boolean, missingSubtitle: Boolean = false, enableCache: Boolean = false, supportsHead: Boolean = true) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val activity = instrumentation.startActivitySync(Intent(context, MpvTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MpvTestActivity
         var engine: MpvPlayerEngine? = null
+        val fixture = videoFixture()
+        val cacheDirectory = context.cacheDir.resolve("cache-024-${System.nanoTime()}")
+        val diskCache = if (enableCache) PlaybackDiskCache(cacheDirectory) else null
         try {
             await("Surface not ready") { activity.video.holder.surface.isValid }
-            TestMediaServer(videoFixture(), requireCredentials = !redirect).use { server ->
+            TestMediaServer(fixture, requireCredentials = !redirect, supportsHead = supportsHead).use { server ->
                 val gateway = if (redirect) TestMediaServer(ByteArray(0), redirectTo = server.url + "?sign=test-token") else null
                 try {
                 val source = gateway ?: server
                 val headers = mapOf("Authorization" to "Basic smoke-test")
                 val request = PlaybackRequest("fixture", source.url, "fixture.avi", headers, preferHardware = false,
+                    cacheIdentity = "test-account-fixture", sourceSizeBytes = fixture.size.toLong(), sourceModifiedAt = "2026-10-18T12:00:00Z",
                     externalSubtitles = if (missingSubtitle) listOf(ExternalSubtitle(source.url.replace(".avi", ".srt"), "fixture.srt", headers)) else emptyList())
                 onMain {
-                    engine = MpvPlayerEngine(activity)
+                    engine = MpvPlayerEngine(activity, diskCache)
                     assertTrue(engine!!.availability is EngineAvailability.Available)
                     activity.bind(engine)
                     engine!!.open(request)
@@ -278,13 +286,24 @@ class MpvVideoSmokeTest {
                 await("Speed did not change") { player.state.value.speed == 1.5f }
                 onMain { player.play() }
                 await("Resume missing") { player.state.value.phase == PlaybackPhase.PLAYING && player.state.value.positionMs > 3_250 }
+                if (diskCache != null) {
+                    await("Android did not persist the video cache") { diskCache.usedBytes.value == fixture.size.toLong() }
+                    val reopened = PlaybackDiskCache(cacheDirectory)
+                    reopened.refreshUsage()
+                    assertEquals("Cache size lost after reinitialization", fixture.size.toLong(), reopened.usedBytes.value)
+                }
+                val payloadBeforeReopen = server.videoBytes.get()
                 onMain { player.stop(); player.open(request) }
                 await("Reopen failed") { player.state.value.phase == PlaybackPhase.PLAYING && player.state.value.positionMs in 1..2_000 }
+                if (diskCache != null) assertTrue("Cached video was downloaded again",
+                    server.videoBytes.get() - payloadBeforeReopen <= if (supportsHead) 0 else 1)
                 if (missingSubtitle) assertTrue(player.state.value.tracks.none { it.type == TrackType.SUBTITLE })
                 } finally { gateway?.close() }
             }
         } finally {
             onMain { activity.bind(null); engine?.release(); activity.finish() }
+            cacheDirectory.listFiles()?.forEach { it.delete() }
+            cacheDirectory.delete()
         }
     }
 
@@ -340,6 +359,7 @@ class MpvVideoSmokeTest {
         private val redirectTo: String? = null,
         private val subtitles: Map<String, ByteArray> = emptyMap(),
         private val subtitleGate: CountDownLatch? = null,
+        private val supportsHead: Boolean = true,
     ) : Closeable {
         private val listener = ServerSocket(0, 4, InetAddress.getByName("127.0.0.1"))
         val url = "http://127.0.0.1:${listener.localPort}/fixture.avi"
@@ -347,6 +367,7 @@ class MpvVideoSmokeTest {
         val credentialsLeaked = AtomicBoolean(false)
         val ranges = AtomicInteger()
         val subtitleRequests = AtomicInteger()
+        val videoBytes = java.util.concurrent.atomic.AtomicLong()
         @Volatile private var closed = false
         init {
             thread(isDaemon = true) {
@@ -366,6 +387,9 @@ class MpvVideoSmokeTest {
                 headers[line.substringBefore(':').lowercase()] = line.substringAfter(':').trim()
             }
             val output = socket.getOutputStream()
+            if (!supportsHead && head.startsWith("HEAD ")) {
+                output.write("HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()); return
+            }
             if (requireCredentials && headers["authorization"] != "Basic smoke-test") {
                 output.write("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()); return
             }
@@ -399,7 +423,10 @@ class MpvVideoSmokeTest {
             val rangeHeader = if (range != null) "Content-Range: bytes $start-$end/${data.size}\r\n" else ""
             val contentType = if (subtitle == null) "video/x-msvideo" else "application/octet-stream"
             output.write("HTTP/1.1 $status OK\r\nAccept-Ranges: bytes\r\nContent-Type: $contentType\r\nContent-Length: ${end - start + 1}\r\n${rangeHeader}Connection: close\r\n\r\n".toByteArray())
-            if (!head.startsWith("HEAD ")) output.write(data, start, end - start + 1)
+            if (!head.startsWith("HEAD ")) {
+                output.write(data, start, end - start + 1)
+                if (subtitle == null) videoBytes.addAndGet((end - start + 1).toLong())
+            }
         }
         override fun close() { closed = true; listener.close() }
     }

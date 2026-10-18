@@ -1,110 +1,74 @@
 # K Player
 
-安卓 WebDAV 播放器 K Player。手机端、中文、深色界面，最低 Android 8.0。当前版本为 `0.2.3-mpv` 测试版。
+安卓 WebDAV 视频播放器，中文深色界面，使用 libmpv 播放内核。最低 Android 8.0，发布 APK 支持 **arm64-v8a**。
 
-## 这一版的范围
+## 下载
 
-- 媒体库、添加/编辑/移除连接、目录浏览、当前目录搜索与筛选、mpv 播放页面、最近记录空态、设置页面。
-- 使用真实的 WebDAV `PROPFIND` 获取目录，支持 Basic 认证、中文及特殊字符路径、同源跳转、加载失败重试。
-- 连接信息通过 Android Keystore 的 AES-GCM 密钥加密后保存在本机；不上传配置，不申请本地文件访问权限，不允许系统备份连接配置。
-- 离线示例媒体库有明确的“示例”标识，文件为页面预览数据，不会请求服务器，也没有可播放视频。
-- 打包官方 libmpv、FFmpeg 与 JNI 库，接入画面、音频、真实进度、缓冲、暂停、拖动、倍速和内嵌音轨/字幕选择。
-- 自动发现同目录的 SRT、ASS、SSA、VTT 外挂字幕，支持同名、语言/字幕标记后缀（如 `.sc/.tc/.chs/.cht`）及保留视频扩展名的命名（如 `.mkv.ass`）；所有匹配轨道均可在字幕菜单切换或关闭，支持 WebDAV 认证及跨源直链跳转。
-- 音频焦点处理、前台播放保持亮屏、切后台暂停、Surface 重建和退出资源释放。
-- 播放控制接口和独立的 mpv 模块，预留后续 ExoPlayer 接入。
+从 [0.2.5 正式版 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.2.5) 下载 `k-player-0.2.5-arm64.apk`。同页提供原生组件对应源码和 `SHA256SUMS.txt`。
 
-默认 APK 支持 **arm64-v8a**。首次构建会下载并校验 mpv-android 官方发布包，只提取原生库；无需在本机安装 NDK。
-原生库来源、准确版本、许可与源码重建入口见 [第三方组件说明](playback/mpv/THIRD_PARTY_NOTICES.md)。
-用户已验证 WebDAV 视频播放和同名/语言后缀外挂字幕可用；硬件解码、更多 NAS 与片源兼容性仍需更多设备验证。
-示例媒体库始终是离线预览，不请求服务器。观看记录和断点续播尚未实现，相关设置不会虚假宣称生效。
+Release 关闭调试，沿用此前维护者证书，可覆盖先前交付的测试包并保留配置。该证书为原 Android Debug 证书；CI 调试包使用临时证书，不能保证与发布包互相覆盖。
 
-## 下载与许可
+## 功能
 
-从 [GitHub Releases](https://github.com/fastchenn/KPlayer/releases) 下载最新测试版 ARM64 APK。
-`0.2.3-mpv` 汇总 mpv 接入、跨服务器直链修复及外挂字幕匹配/切换；不补发开发过程中的中间 APK。
-当前为调试签名测试包，可覆盖安装之前由同一维护者证书签名的测试版；CI 构建使用临时调试证书，不能保证与 Release 安装包互相覆盖。
+- WebDAV 连接管理、目录浏览、当前目录搜索与筛选；支持匿名与 Basic 认证、中文及特殊字符路径。
+- 真实视频和音频播放，暂停、前后十秒、拖动、倍速、内嵌音轨和字幕选择。
+- 自动发现同目录 SRT / ASS / SSA / VTT 外挂字幕，支持同名、语言后缀和保留视频扩展名的命名，例如 `电影.sc.ass`、`电影.zh-CN.srt`、`电影.mkv.ass`；匹配的多条字幕可切换或关闭。
+- 全屏播放，90° 横竖屏切换，底部居中的播放按钮，顶部文件名栏显示下载速度；轻触切换控制栏，播放时 4 秒无操作自动隐藏，长按画面临时 2 倍速。
+- 本机观看历史、断点续播、删除或清空记录，以及媒体库标题和说明文字编辑。
+- 视频与外挂字幕持久缓存，设置中可查看大小、开关缓存、选择容量及确认清除；默认开启，上限 5 GB，可选 2 / 5 / 10 / 20 / 50 GB。
+- 使用用户提供的启动图标，设置页直接显示设置选项。
 
-Copyright (C) 2026 fastchenn。K Player 应用源码采用 **GPL-3.0-or-later**，详见 [LICENSE](LICENSE)。
-第三方源码保留各自的版权和许可证。Release 同时提供原生组件源码附件和校验值；应用及原生组件的对应源码入口见 [SOURCES.md](SOURCES.md)。
+示例媒体库标注为“示例”，仅供离线界面预览，不请求服务器，也没有可播放视频。切后台暂停，前台播放保持亮屏。
 
-## 打开和构建
+## 缓存行为
 
-1. 在 Android Studio 中打开项目根目录（包含 `settings.gradle.kts` 的目录），选择 JDK 17。
-2. 安装 Android SDK Platform 35 和 Build Tools 35.0.0，等待 Gradle 同步。
-3. 首次同步需要联网获取原生发布包和 Maven 依赖。运行 `app` 到 Android 8.0 或更新的 ARM64 设备。
+已读取的视频和字幕保存在应用私有持久目录 `noBackupFilesDir/playback`，退出、结束进程后保留。数据边读边落盘，未完成的块也可在下次继续；已缓存区域的播放和拖动直接读取本机。
 
-Windows 命令：
+缓存按账号、连接、文件路径及 WebDAV 文件大小和修改时间识别，不依赖 OpenList 临时签名、CDN ETag 或回环端口。历史记录命中本地索引时直接恢复视频和字幕，不等待 PROPFIND、HEAD 或新直链。支持 chunked、限制 Range 长度及忽略 Range 的响应；本机保存不因源站 `Cache-Control: no-store` 而关闭。写入或协议异常会在设置页显示原因。
 
-```powershell
-.\gradlew.bat :playback:mpv:testDebugUnitTest :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
-```
+容量为所有文件共享的上限，达到上限会淘汰最久未使用的数据。关闭缓存会保留文件；主动清除、缩小容量、清除应用数据或卸载会删除相应数据。**未下载的区域仍需联网**；忽略 Range 的源站首次跳到未缓存位置时，仍需读取前面的字节。源文件被替换后，从媒体库重新打开以获取最新版本。尚无独立离线媒体库页面。
 
-macOS / Linux：
+0.2.5 已通过模拟 OpenList 的完整应用测试，包括断开服务器、强制结束进程后从历史重开、拖动及字幕恢复；用户实际 OpenList 挂载和 ARM64 真机仍待实测。[发布说明](docs/releases/v0.2.5.md)和[验证记录](docs/verification/v0.2.5.md)列出具体范围。
 
-```sh
-chmod +x gradlew
-./gradlew :playback:mpv:testDebugUnitTest :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
-```
+## 构建与测试
 
-需要本机 Android SDK 路径时，在不提交到 Git 的 `local.properties` 中填写 `sdk.dir=...`。Gradle Wrapper 和原生发布包均启用了 SHA-256 校验。
-CI 工作流运行单元测试、Lint、APK 构建和原生测试 APK 构建，不会发布应用。
-
-连接匹配 ABI 的 Android 设备后，可以运行原生测试；测试在本地生成 PCM 音频和 RGB AVI 视频，
-检查原生解码、进度/结束事件、重复初始化/释放，以及带认证的 HTTP 视频读取、GPU 画面像素、暂停、拖动、倍速、重新打开、外挂字幕解码和实际文字渲染：
+需要 JDK 17、Android SDK Platform 35 和 Build Tools 35.0.0。Android Studio 打开项目根目录，或使用 Gradle Wrapper：
 
 ```powershell
-.\gradlew.bat :playback:mpv:connectedDebugAndroidTest
+.\gradlew.bat :app:testReleaseUnitTest :playback:mpv:testReleaseUnitTest :app:lintRelease :app:assembleRelease
 ```
 
-x86_64 模拟器需要额外打包对应的官方原生库，PowerShell 中请给含逗号的参数加引号：
+macOS / Linux 使用 `./gradlew`；必要时先执行 `chmod +x gradlew`。首次构建需要联网下载 Maven 依赖及经 SHA-256 校验的官方 mpv-android 原生发布包，无需 NDK。`local.properties` 可设置本机 `sdk.dir`，该文件不提交。
 
-```powershell
-.\gradlew.bat '-PmpvAbis=arm64-v8a,x86_64' :playback:mpv:connectedDebugAndroidTest
-```
+默认 Release 构建未配置签名，可在 Android Studio 的 Generate Signed Bundle / APK 中使用自己的证书；生成文件位于 `app/build/outputs/apk/release/`。调试安装使用 `:app:assembleDebug`。
 
-固定工具版本：AGP 8.9.2、Gradle 8.11.1、Kotlin / Compose Compiler 2.1.20、Compose BOM 2025.04.01、JDK 17。
+固定工具版本：AGP 8.9.2、Gradle 8.11.1、Kotlin / Compose Compiler 2.1.20、Compose BOM 2025.04.01。CI 执行 Release 单元测试、Lint、Release/Debug 构建和两组设备测试 APK 构建；设备测试需另行运行。[开发与发布说明](docs/DEVELOPMENT.md)包含模拟器、分阶段缓存测试和发布步骤。
 
 ## 代码结构
 
 ```text
-app/
-  .../data/             连接加密存储、WebDAV、离线示例
-  .../ui/               Compose 页面与主题
-  .../AppViewModel.kt   页面状态、导航与请求生命周期
-playback/api/           内核无关的播放接口、状态、能力与请求
-playback/mpv/           libmpv/JNI、播放状态与逐文件视频流转发
+app/                    Compose 页面、连接存储、WebDAV、历史记录
+playback/api/           与播放内核无关的接口、状态和请求
+playback/mpv/           libmpv/JNI、认证流转发、持久缓存
+docs/releases/         历史和当前版本的发布说明
+docs/verification/     版本验证记录
+tools/                 对应原生源码打包工具
 ```
 
-`PlayerEngine` 的时间单位统一为毫秒。请求头只放在内存中的 `PlaybackRequest`，不写入观看历史；轨道 ID 属于各自内核。UI 不直接调用 mpv API。画面通过 `Surface` 交给内核，后续 ExoPlayer 可用 `setVideoSurface` 对接。
+`PlayerEngine` 的时间单位为毫秒，UI 不直接调用 mpv。请求头仅存于内存中的播放请求，不写入历史；连接配置使用 Android Keystore / AES-GCM 加密，禁用系统备份。缓存索引不保存账号、认证头、服务器地址或签名直链。
 
-## 播放链路
+视频和字幕通过仅监听 `127.0.0.1`、使用随机路径的逐文件端点交给 mpv。OkHttp 处理认证和系统 HTTPS 证书校验；允许视频跨源直链，跨源剥离认证、Cookie 和私有请求头，不允许 HTTPS 降级。目录浏览限制在连接范围内。
 
-1. 点击真实媒体文件后，播放器等待有效的 Surface 再创建原生会话，设置 GPU、AudioTrack 和硬件解码偏好。
-2. 每个文件创建一个只监听 `127.0.0.1` 的临时流转发端点，使用随机路径，只接受当前文件的 GET/HEAD 和 Range 读取。
-3. OkHttp 向 WebDAV 发起请求，处理认证并使用 Android 的证书信任校验。视频下载允许跳转到其他服务器的直链；跨源后不再转发 WebDAV 认证、Cookie 和私有请求头，保留 User-Agent 等公开请求信息和 Range/If-Range。每次读取从 WebDAV 原地址重新获取直链，不缓存可能过期的签名 URL；不允许 HTTPS 降级到 HTTP。目录浏览继续限制在连接范围内。
-   libmpv 不接收服务器账号、密码或认证头，也不直接打开带凭据的服务器地址。
-4. 从完整目录列表匹配外挂字幕：以完整视频文件名或去掉视频扩展名的名称为基准，接受完全同名或以分隔符连接的常见语言/字幕标记，不会仅凭一段相似前缀匹配其他集数。为每个字幕创建独立的认证流端点；使用原始 WebDAV 字幕地址，不从视频跳转后的 CDN 目录猜测路径。视频加载后异步添加全部匹配字幕，首个成功加载的外挂轨道自动选中；用户手动选轨或关闭后保留用户选择。字幕不可读不影响视频播放。
-5. 从原生事件回传真实的时间、时长、可拖动状态、播放/暂停/缓冲/结束和音轨列表。秒与公共接口的毫秒在内核边界转换。
-6. 停止或更换文件时关闭视频及字幕流端点、取消未完成的请求并销毁原生会话；旧会话回调不能覆盖新文件状态。后台播放尚未开放，切后台会暂停。
+## 兼容范围
 
-下一阶段优先进行真实设备和 NAS 的播放验证，再补观看记录、断点续播、手动导入字幕、后台播放和画中画。
+- 仅浏览当前目录，不递归扫描；目录 XML 响应上限 4 MiB。
+- 面向普通视频文件，不支持 HLS / DASH 播放列表或任意外部引用。
+- 外挂字幕从当前目录匹配，不搜索其他目录；暂未实现手动导入、IDX/SUB、未知任意后缀。
+- 暂未实现 Digest / OAuth / 客户端证书 / 自签名证书配置、后台播放、画中画或 ExoPlayer。
+- 更多 NAS、ARM64 硬件解码、真实片源和设备行为仍需扩大验证。
 
-官方参考：[mpv-android](https://github.com/mpv-android/mpv-android)、[mpv 手册](https://mpv.io/manual/stable/)。
+## 许可与源码
 
-## 当前兼容范围
+Copyright (C) 2026 fastchenn。应用源码采用 **GPL-3.0-or-later**，见 [LICENSE](LICENSE)；第三方代码保留各自许可。
 
-- WebDAV 连接先支持匿名与 Basic 认证；Digest、OAuth、客户端证书和自签名证书配置尚未实现。
-- 可以连接用户填写的 HTTP 服务，HTTPS 使用系统信任校验。不会跳过证书验证。
-- 不递归扫描全库；每次读取当前目录。单次 XML 响应上限 4 MiB。
-- 播放针对 WebDAV 中的普通视频文件，不支持 HLS/DASH 播放列表及任意外部引用；字幕仅从当前目录明确匹配的文件加载。
-- 外挂字幕自动匹配示例：`电影.mkv` 对应 `电影.srt`、`电影.sc.ass`、`电影.tc.ass`、`电影.chs.ass`、`电影.cht.ass`、`电影.zh-CN.srt`、`电影.zh-Hant.ass`、`电影.mkv.ass`、`电影.mkv.chs.ass`；也支持 `.ssa` / `.vtt`，匹配忽略大小写。
-- 常见语言/字幕标记可通过点、空格、下划线、连字符或括号连接，如 `电影[简体].ass`、`电影.chs&eng.ass`、`电影.en.SDH.srt`、`电影.zh-Hans.forced.srt`。保留原始文件名供菜单区分；未知的任意后缀、其他目录、手动导入和 IDX/SUB 双文件字幕尚未接入。
-- 最近记录、断点续播、后台播放、画中画和 ExoPlayer 属于后续阶段。
-- 当前没有要求用户提供服务器账号；真实服务器和真机上的连通性仍需实际配置后验证。
-
-## 验证
-
-目录解析及请求测试覆盖中文/特殊字符路径、父目录过滤、同源路径范围、认证失败、Basic 头、跳转方法保留和凭据隔离；字幕匹配测试覆盖用户提供的完整动画文件名、简繁/语言标记、保留视频扩展名、组合标记、多扩展名、中文/特殊字符、大小写、去重及相邻集数/跨目录/跨源排除。
-mpv 模块单元测试覆盖视频字节范围读取、HEAD、分块响应、同源/跨源跳转、认证失败、停止取消连接和原生播放状态转换。
-Android 原生测试检查外挂字幕的实际文字解码和 GPU 像素、五条外挂字幕同时加载及逐条切换、关闭/重新开启、重新打开、换片清除、跨源跳转、字幕缺失不影响视频及延迟加载期间保留手动关闭选择。
-实际执行结果和尚未验证的部分见 `BUILD-RESULTS.txt`。
+[SOURCES.md](SOURCES.md)提供当前版本应用及原生依赖的对应源码、固定版本和重建入口；[第三方组件说明](playback/mpv/THIRD_PARTY_NOTICES.md)记录原生库来源及许可。参考上游：[mpv-android](https://github.com/mpv-android/mpv-android)、[mpv 手册](https://mpv.io/manual/stable/)。

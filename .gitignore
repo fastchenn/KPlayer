@@ -1,6 +1,7 @@
 .gradle/
 .kotlin/
 .idea/
+dist/
 **/build/
 local.properties
 *.iml
@@ -11,4 +12,8 @@ local.properties
 *.aab
 *.apks
 *.idsig
+*.apk.sha256
+*.log
+__pycache__/
+*.pyc
 .DS_Store

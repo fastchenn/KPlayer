@@ -41,9 +41,10 @@ fun LibraryScreen(
                 Column {
                     Text("YOUR PRIVATE CINEMA", color = MintColor, fontSize = 10.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(18.dp))
-                    Text("把你的媒体库\n带在身边。", fontSize = 29.sp, lineHeight = 41.sp, fontWeight = FontWeight.SemiBold)
+                    Text(state.libraryText.firstLine, fontSize = 29.sp, lineHeight = 41.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(state.libraryText.secondLine, fontSize = 29.sp, lineHeight = 41.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(10.dp))
-                    Text("连接 WebDAV，从自己的收藏开始。", fontSize = 13.sp, color = Color(0xFFB5CBBF))
+                    Text(state.libraryText.description, fontSize = 13.sp, color = Color(0xFFB5CBBF))
                     Spacer(Modifier.height(24.dp))
                     FilledTonalButton(onClick = onAdd, enabled = !state.initializing && !state.storageError,
                         colors = ButtonDefaults.filledTonalButtonColors(containerColor = MintColor, contentColor = Color(0xFF153C2D))) {

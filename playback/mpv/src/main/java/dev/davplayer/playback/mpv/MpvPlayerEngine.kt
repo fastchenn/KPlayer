@@ -11,9 +11,10 @@ import dev.davplayer.playback.api.*
 import `is`.xyz.mpv.MPVLib
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /** Foreground player. Commands and published state belong to the main thread. */
-class MpvPlayerEngine(context: Context) : PlayerEngine {
+class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache? = null) : PlayerEngine {
     private val context = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     override val id = EngineId.MPV
@@ -41,6 +42,16 @@ class MpvPlayerEngine(context: Context) : PlayerEngine {
     private var desiredPause = false
     private var released = false
     private var networkError: String? = null
+    private var speedMeter = NetworkSpeedMeter()
+    private val speedPolling = object : Runnable {
+        override fun run() {
+            if (client == null || released) return
+            val active = state.value.phase in setOf(PlaybackPhase.PREPARING, PlaybackPhase.PLAYING, PlaybackPhase.BUFFERING, PlaybackPhase.PAUSED)
+            reducer.networkSpeed(if (active) speedMeter.sample() else 0)
+            publish()
+            main.postDelayed(this, 1_000)
+        }
+    }
     private val audio = this.context.getSystemService(AudioManager::class.java)
     private var hasFocus = false
     private val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -60,7 +71,7 @@ class MpvPlayerEngine(context: Context) : PlayerEngine {
         this.request = request
         desiredPause = false
         val speed = request.speed.takeIf { it.isFinite() }?.coerceIn(0.25f, 4f) ?: 1f
-        reducer.prepare(speed)
+        reducer.prepare(speed, request.mediaId)
         publish()
         if (surface?.isValid == true) startSession()
     }
@@ -71,7 +82,8 @@ class MpvPlayerEngine(context: Context) : PlayerEngine {
         val current = request!!
         val session = generation
         try {
-            source = LoopbackMediaSource(current, onError = { message ->
+            val meter = NetworkSpeedMeter().also { speedMeter = it }
+            source = LoopbackMediaSource(current, diskCache = diskCache, onBytesRead = meter::add, onError = { message ->
                 // A probe or an old byte-range request may fail while libmpv recovers.
                 // Keep a safe diagnostic; only a native playback failure ends the session.
                 main.post { if (!released && generation == session && networkError == null) networkError = message }
@@ -106,10 +118,11 @@ class MpvPlayerEngine(context: Context) : PlayerEngine {
                     }
                 })
             client = native
-            native.initialize(current.preferHardware, desiredPause, reducer.value.speed)
+            native.initialize(current.preferHardware, desiredPause, reducer.value.speed, current.cacheEnabled)
             native.attach(surface!!)
             if (width > 0 && height > 0) native.size(width, height)
             native.load(source!!.url, current.startPositionMs.coerceAtLeast(0))
+            main.postDelayed(speedPolling, 1_000)
         } catch (_: Exception) { fail("播放组件初始化失败，请重新打开视频或尝试关闭硬件解码") }
     }
 
@@ -183,7 +196,10 @@ class MpvPlayerEngine(context: Context) : PlayerEngine {
             runCatching {
                 val source = LoopbackMediaSource(PlaybackRequest(
                     mediaId = request.mediaId, url = subtitle.url, title = subtitle.title, headers = subtitle.headers,
-                ))
+                    cacheEnabled = request.cacheEnabled,
+                    cacheIdentity = request.cacheIdentity?.let { "$it:subtitle:${subtitle.url.toHttpUrl().encodedPath}" },
+                    sourceSizeBytes = subtitle.sizeBytes, sourceModifiedAt = subtitle.modifiedAt,
+                ), diskCache = diskCache)
                 subtitleSources.add(source)
                 client?.addSubtitle(source.url, subtitle.title)
             }
@@ -220,6 +236,8 @@ class MpvPlayerEngine(context: Context) : PlayerEngine {
 
     private fun disposeSession() {
         generation++ // Ignore queued callbacks belonging to the old file.
+        main.removeCallbacks(speedPolling)
+        reducer.networkSpeed(0)
         networkError = null
         source?.close()
         source = null

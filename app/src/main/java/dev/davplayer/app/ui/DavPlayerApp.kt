@@ -33,7 +33,8 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
     LaunchedEffect(model) { model.notifications.collect { snackbars.showSnackbar(it) } }
     DisposableEffect(lifecycleOwner, model) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) model.engine.pause()
+            if (event == Lifecycle.Event.ON_PAUSE) model.savePlaybackProgress()
+            if (event == Lifecycle.Event.ON_STOP) model.onBackground()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -94,8 +95,12 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
                         onDemo = { model.openServer(DemoLibrary.server) },
                         onRetry = model::reloadConnections,
                     )
-                    HomeTab.RECENT -> RecentScreen()
-                    HomeTab.SETTINGS -> SettingsScreen(state, model::setPreferHardware, model::setRememberPosition)
+                    HomeTab.RECENT -> RecentScreen(state, model::openHistory, model::removeHistory, model::clearHistory, model::reloadHistory, model::retryHistorySave)
+                    HomeTab.SETTINGS -> SettingsScreen(
+                        state, model::setPreferHardware, model::setRememberPosition,
+                        model::setPlaybackCacheEnabled, model::setPlaybackCacheSizeGb, model::clearPlaybackCache,
+                        model::setLibraryText,
+                    )
                 }
             }
         }

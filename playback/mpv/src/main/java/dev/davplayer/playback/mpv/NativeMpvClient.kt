@@ -14,7 +14,7 @@ internal class NativeMpvClient(
 ) : MPVLib.EventObserver {
     private var created = false
 
-    fun initialize(hardware: Boolean, paused: Boolean, speed: Float) {
+    fun initialize(hardware: Boolean, paused: Boolean, speed: Float, cacheEnabled: Boolean = true) {
         check(owner == null) { "A libmpv session is already active" }
         owner = this
         try {
@@ -27,7 +27,7 @@ internal class NativeMpvClient(
                 "ao" to "audiotrack,opensles", "hwdec" to if (hardware) "mediacodec,mediacodec-copy" else "no",
                 "idle" to "yes", "force-window" to "no", "keep-open" to "yes",
                 "pause" to if (paused) "yes" else "no", "speed" to speed.toString(),
-                "cache" to "yes", "demuxer-max-bytes" to "67108864", "demuxer-max-back-bytes" to "16777216",
+                "cache" to if (cacheEnabled) "yes" else "no", "demuxer-max-bytes" to "67108864", "demuxer-max-back-bytes" to "16777216",
                 "network-timeout" to "30", "save-position-on-quit" to "no", "http-proxy" to "",
                 "input-default-bindings" to "no", "osc" to "no", "osd-level" to "0",
             )
@@ -36,7 +36,9 @@ internal class NativeMpvClient(
             }
             MPVLib.addObserver(this)
             MPVLib.init()
-            for (name in listOf("time-pos", "duration", "speed")) MPVLib.observeProperty(name, MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
+            for (name in listOf("time-pos", "duration", "speed", "demuxer-cache-time", "demuxer-cache-duration")) {
+                MPVLib.observeProperty(name, MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
+            }
             for (name in listOf("pause", "paused-for-cache", "eof-reached", "seekable")) MPVLib.observeProperty(name, MPVLib.MpvFormat.MPV_FORMAT_FLAG)
             MPVLib.observeProperty("track-list", MPVLib.MpvFormat.MPV_FORMAT_NONE)
         } catch (error: Exception) {

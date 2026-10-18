@@ -26,13 +26,16 @@ import okhttp3.Response
 
 /**
  * A per-playback streaming endpoint. libmpv only receives an unguessable loopback URL;
- * server credentials and TLS verification stay in OkHttp. No media is cached on disk.
+ * server credentials and TLS verification stay in OkHttp. Optional private disk caching
+ * shares the same authenticated redirect policy and never stores credentials or signed URLs.
  * Only GET/HEAD for this exact file are accepted, including byte-range requests.
  */
 internal class LoopbackMediaSource(
     private val request: PlaybackRequest,
     client: OkHttpClient = defaultClient,
     private val onError: (String) -> Unit = {},
+    diskCache: PlaybackDiskCache? = null,
+    private val onBytesRead: (Int) -> Unit = {},
 ) : Closeable {
     private val origin = request.url.toHttpUrl().also {
         require(it.username.isEmpty() && it.password.isEmpty()) { "Credentials must use request headers" }
@@ -51,6 +54,20 @@ internal class LoopbackMediaSource(
         Thread(it, "KPlayer-media-stream").apply { isDaemon = true }
     })
     @Volatile private var closed = false
+    private val cachedReader = diskCache?.takeIf { request.cacheEnabled }?.let { cache ->
+        CachedMediaReader(
+            request = request,
+            cache = cache,
+            fetcher = object : MediaFetcher {
+                override fun <T> useResponse(method: String, headers: Map<String, String>, read: (Response) -> T): T {
+                    val (response, call) = fetch(method, headers)
+                    try { return response.use(read) } finally { calls.remove(call) }
+                }
+            },
+            onBytesRead = onBytesRead,
+            isClosed = { closed },
+        )
+    }
 
     init {
         thread(name = "KPlayer-media-listener", isDaemon = true) {
@@ -105,6 +122,7 @@ internal class LoopbackMediaSource(
         if (headers["transfer-encoding"] != null || (headers["content-length"] ?: "0") != "0") {
             respond(output, 400); return
         }
+        if (cachedReader?.serve(parts[0], headers, output) == true) return
         val (response, call) = try { fetch(parts[0], headers) } catch (_: IllegalArgumentException) {
             respond(output, 400); return
         } catch (error: IOException) {
@@ -146,6 +164,7 @@ internal class LoopbackMediaSource(
                     break
                 }
                 if (count < 0) break
+                onBytesRead(count)
                 // A failed downstream write is a seek/stop, not a remote playback error.
                 output.write(buffer, 0, count)
             }
@@ -204,6 +223,7 @@ internal class LoopbackMediaSource(
 
     override fun close() {
         closed = true
+        cachedReader?.close()
         server.close()
         calls.forEach(Call::cancel)
         sockets.forEach { runCatching { it.close() } }

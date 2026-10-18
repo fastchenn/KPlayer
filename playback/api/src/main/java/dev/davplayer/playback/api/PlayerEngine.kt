@@ -39,6 +39,12 @@ data class PlaybackState(
     val tracks: List<MediaTrack> = emptyList(),
     val seekable: Boolean = false,
     val message: String? = null,
+    val networkBytesPerSecond: Long = 0,
+    val mediaId: String? = null,
+    /** True after a valid native position observation, not a UI/default timestamp. */
+    val positionKnown: Boolean = false,
+    /** End of the contiguously demuxed/cacheable range, in media time. Null when unknown. */
+    val bufferedUntilMs: Long? = null,
 )
 
 /** An explicitly discovered sidecar; credentials follow its own URL, not the video's redirect. */
@@ -46,6 +52,8 @@ class ExternalSubtitle(
     val url: String,
     val title: String,
     val headers: Map<String, String> = emptyMap(),
+    val sizeBytes: Long? = null,
+    val modifiedAt: String? = null,
 ) {
     override fun toString() = "ExternalSubtitle(credentials=redacted)"
 }
@@ -60,6 +68,11 @@ class PlaybackRequest(
     val speed: Float = 1f,
     val preferHardware: Boolean = true,
     val externalSubtitles: List<ExternalSubtitle> = emptyList(),
+    val cacheEnabled: Boolean = true,
+    /** Stable account/file identity and fresh WebDAV metadata, including on history reopen. */
+    val cacheIdentity: String? = null,
+    val sourceSizeBytes: Long? = null,
+    val sourceModifiedAt: String? = null,
 ) {
     override fun toString() = "PlaybackRequest(mediaId=$mediaId, credentials=redacted)"
 }

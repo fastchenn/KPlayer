@@ -5,6 +5,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MpvPlaybackStateTest {
+    @Test fun historyCanDistinguishRealNativePositionsFromDefaultProgressAndIdentifyTheFile() {
+        val state = MpvPlaybackState()
+        state.prepare(1f, "first")
+        assertEquals("first", state.value.mediaId)
+        assertFalse(state.value.positionKnown)
+        state.fileLoaded()
+        assertFalse(state.value.positionKnown)
+        state.property("time-pos", 0.0)
+        assertTrue(state.value.positionKnown)
+        state.property("time-pos", 12.345)
+        assertEquals(12_345L, state.value.positionMs)
+        state.prepare(1f, "second")
+        assertEquals("second", state.value.mediaId)
+        assertFalse(state.value.positionKnown)
+        state.idle()
+        assertNull(state.value.mediaId)
+    }
+
     @Test fun preparationWaitsForNativeFileLoadedAndNeverInventsProgress() {
         val state = MpvPlaybackState()
         state.prepare(1.25f)

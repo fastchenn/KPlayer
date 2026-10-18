@@ -11,29 +11,38 @@ internal class MpvPlaybackState {
     private var buffering = false
     private var ended = false
 
-    fun prepare(speed: Float) {
+    fun prepare(speed: Float, mediaId: String? = null) {
         loaded = false
         paused = false
         buffering = false
         ended = false
-        value = PlaybackState(phase = PlaybackPhase.PREPARING, speed = speed)
+        value = PlaybackState(phase = PlaybackPhase.PREPARING, speed = speed, mediaId = mediaId)
     }
 
     fun fileLoaded() { loaded = true; refreshPhase() }
 
     fun property(name: String, data: Any?) {
         when (name) {
-            "time-pos" -> value = value.copy(positionMs = secondsToMillis(data as? Double) ?: value.positionMs)
+            "time-pos" -> secondsToMillis(data as? Double)?.let { value = value.copy(positionMs = it, positionKnown = true) }
             "duration" -> value = value.copy(durationMs = secondsToMillis(data as? Double)?.takeIf { it > 0 })
             "speed" -> (data as? Double)?.takeIf { it.isFinite() && it > 0 }?.let { value = value.copy(speed = it.toFloat()) }
             "pause" -> { paused = data == true; refreshPhase() }
             "paused-for-cache" -> { buffering = data == true; refreshPhase() }
             "eof-reached" -> { ended = data == true; refreshPhase() }
             "seekable" -> value = value.copy(seekable = data == true)
+            "demuxer-cache-time" -> {
+                val end = secondsToMillis(data as? Double)
+                if (end != null) value = value.copy(bufferedUntilMs = end)
+            }
+            "demuxer-cache-duration" -> {
+                val duration = secondsToMillis(data as? Double)?.takeIf { it > 0 } ?: return
+                value = value.copy(bufferedUntilMs = (value.positionMs + duration).coerceAtMost(value.durationMs ?: Long.MAX_VALUE))
+            }
         }
     }
 
     fun tracks(tracks: List<MediaTrack>) { value = value.copy(tracks = tracks) }
+    fun networkSpeed(bytesPerSecond: Long) { value = value.copy(networkBytesPerSecond = bytesPerSecond.coerceAtLeast(0)) }
 
     fun endFile(eof: Boolean, errorMessage: String? = null) {
         if (eof || ended) { ended = true; refreshPhase() }

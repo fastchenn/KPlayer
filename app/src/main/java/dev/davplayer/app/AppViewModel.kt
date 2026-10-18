@@ -1,6 +1,7 @@
 package dev.davplayer.app
 
 import android.app.Application
+import android.annotation.SuppressLint
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,8 @@ import dev.davplayer.playback.api.PlaybackRequest
 import dev.davplayer.playback.api.ExternalSubtitle
 import dev.davplayer.playback.api.PlayerEngine
 import dev.davplayer.playback.mpv.MpvPlayerEngine
+import dev.davplayer.playback.mpv.PlaybackDiskCache
+import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -18,6 +21,7 @@ import okhttp3.Credentials
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 enum class HomeTab { LIBRARY, RECENT, SETTINGS }
+val PlaybackCacheSizesGb = listOf(2, 5, 10, 20, 50)
 data class BrowserState(
     val server: ServerConnection,
     val url: String,
@@ -35,6 +39,18 @@ data class AppState(
     val video: VideoTarget? = null,
     val preferHardware: Boolean = true,
     val rememberPosition: Boolean = true,
+    val playbackCacheEnabled: Boolean = true,
+    val playbackCacheSizeGb: Int = 5,
+    val playbackCacheUsedBytes: Long = 0,
+    val playbackCacheReady: Boolean = false,
+    val playbackCacheBusy: Boolean = false,
+    val playbackCacheError: String? = null,
+    val libraryText: LibraryText = LibraryText(),
+    val watchHistory: List<WatchRecord> = emptyList(),
+    val historyLoading: Boolean = true,
+    val historyLoadError: Boolean = false,
+    val historySaveError: Boolean = false,
+    val historyOpeningId: String? = null,
 )
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
@@ -45,14 +61,56 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val mutableState = MutableStateFlow(AppState(
         preferHardware = preferences.getBoolean("prefer_hardware", true),
         rememberPosition = preferences.getBoolean("remember_position", true),
+        playbackCacheEnabled = preferences.getBoolean("playback_cache_enabled", true),
+        playbackCacheSizeGb = preferences.getInt("playback_cache_size_gb", 5).takeIf { it in PlaybackCacheSizesGb } ?: 5,
+        libraryText = runCatching {
+            LibraryText(
+                preferences.getString("library_first_line", null) ?: LibraryText().firstLine,
+                preferences.getString("library_second_line", null) ?: LibraryText().secondLine,
+                preferences.getString("library_description", null) ?: LibraryText().description,
+            ).validated()
+        }.getOrDefault(LibraryText()),
     ))
     val state = mutableState.asStateFlow()
-    val engine: PlayerEngine = MpvPlayerEngine(application)
+    private val diskCache = PlaybackDiskCache(
+        File(application.noBackupFilesDir, "playback"),
+        enabled = mutableState.value.playbackCacheEnabled,
+        maxBytes = mutableState.value.playbackCacheSizeGb * 1024L * 1024 * 1024,
+    )
+    private val cacheMutations = Mutex()
+    val engine: PlayerEngine = MpvPlayerEngine(application, diskCache)
     private val messages = Channel<String>(Channel.BUFFERED)
     val notifications = messages.receiveAsFlow()
     private var browsingJob: Job? = null
+    private var historyOpeningJob: Job? = null
+    private var historyLoadingJob: Job? = null
+    private val historyStore = WatchHistoryStore(File(application.noBackupFilesDir, "watch-history.bin"))
+    private val historyWrites = Channel<List<WatchRecord>>(Channel.CONFLATED)
+    // This writer drains the final checkpoint even when the ViewModel's own scope is cleared.
+    private val historyWriter = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val history = WatchHistoryRecorder(persist = { historyWrites.trySend(it) })
 
-    init { reloadConnections() }
+    init {
+        reloadConnections()
+        historyWriter.launch {
+            try {
+                for (snapshot in historyWrites) {
+                    val failed = runCatching { historyStore.save(snapshot) }.isFailure
+                    viewModelScope.launch { mutableState.update { it.copy(historySaveError = failed) } }
+                }
+            } finally { historyWriter.cancel() }
+        }
+        viewModelScope.launch { history.records.collect { records -> mutableState.update { it.copy(watchHistory = records) } } }
+        viewModelScope.launch { engine.state.collect(history::observe) }
+        reloadHistory()
+        viewModelScope.launch {
+            diskCache.usedBytes.collect { bytes -> mutableState.update { it.copy(playbackCacheUsedBytes = bytes) } }
+        }
+        viewModelScope.launch {
+            diskCache.writeIssue.collect { error -> mutableState.update { it.copy(playbackCacheError = error) } }
+        }
+        applyCacheSettings(refreshUsage = true)
+    }
 
     fun reloadConnections() {
         viewModelScope.launch {
@@ -90,8 +148,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setTab(tab: HomeTab) { mutableState.update { it.copy(tab = tab) } }
-    fun openServer(server: ServerConnection) { loadDirectory(server, server.rootUrl) }
+    fun setTab(tab: HomeTab) {
+        if (tab != HomeTab.RECENT) cancelHistoryOpening()
+        mutableState.update { it.copy(tab = tab) }
+        if (tab == HomeTab.SETTINGS) applyCacheSettings()
+    }
+    fun openServer(server: ServerConnection) { cancelHistoryOpening(); loadDirectory(server, server.rootUrl) }
     fun refreshDirectory() { state.value.browser?.let { loadDirectory(it.server, it.url) } }
 
     fun openEntry(entry: MediaEntry) {
@@ -99,22 +161,44 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val server = browser.server
         if (entry.isDirectory) loadDirectory(server, entry.url)
         else if (entry.isVideo) {
-            val headers = if (server.username.isNotEmpty() || server.password.isNotEmpty())
-                mapOf("Authorization" to Credentials.basic(server.username, server.password, Charsets.UTF_8)) else emptyMap()
-            mutableState.update { it.copy(video = VideoTarget(server, entry)) }
-            if (server.isDemo) { engine.stop(); return }
-            engine.open(PlaybackRequest(
-                mediaId = "${server.id}:${entry.url.toHttpUrl().encodedPath}",
-                url = entry.url, title = entry.name, headers = headers, preferHardware = state.value.preferHardware,
-                externalSubtitles = matchingSubtitles(entry, browser.entries).map {
-                    ExternalSubtitle(url = it.url, title = it.name, headers = headers)
-                },
-            ))
+            if (state.value.historyLoading) viewModelScope.launch {
+                historyLoadingJob?.join()
+                if (state.value.browser === browser && state.value.video == null) playVideo(server, entry, browser.entries)
+            } else playVideo(server, entry, browser.entries)
         }
+    }
+
+    private fun playVideo(server: ServerConnection, entry: MediaEntry, siblings: List<MediaEntry>, explicitStartMs: Long? = null) {
+        history.finish(engine.state.value)
+        val seed = WatchRecord.create(server, entry)
+        val previous = seed?.let { created -> history.records.value.firstOrNull { it.id == created.id } }?.takeIf { it.sameFile(entry) }
+        val startMs = explicitStartMs ?: if (state.value.rememberPosition) previous?.resumePositionMs ?: 0 else 0
+        val headers = if (server.username.isNotEmpty() || server.password.isNotEmpty())
+            mapOf("Authorization" to Credentials.basic(server.username, server.password, Charsets.UTF_8)) else emptyMap()
+        mutableState.update { it.copy(video = VideoTarget(server, entry)) }
+        if (server.isDemo) { engine.stop(); return }
+        val mediaId = "${server.id}:${entry.url.toHttpUrl().encodedPath}"
+        if (seed != null) history.start(
+            seed.copy(durationMs = previous?.durationMs, positionMs = previous?.positionMs ?: 0, completed = previous?.completed ?: false),
+            mediaId, startMs,
+        )
+        engine.open(PlaybackRequest(
+            mediaId = mediaId,
+            url = entry.url, title = entry.name, headers = headers, preferHardware = state.value.preferHardware,
+            startPositionMs = startMs,
+            externalSubtitles = matchingSubtitles(entry, siblings).map {
+                ExternalSubtitle(url = it.url, title = it.name, headers = headers, sizeBytes = it.sizeBytes, modifiedAt = it.modifiedAt)
+            },
+            cacheEnabled = state.value.playbackCacheEnabled,
+            cacheIdentity = seed?.id,
+            sourceSizeBytes = entry.sizeBytes,
+            sourceModifiedAt = entry.modifiedAt,
+        ))
     }
 
     fun back() {
         if (state.value.video != null) {
+            history.finish(engine.state.value)
             engine.stop()
             mutableState.update { it.copy(video = null) }
             return
@@ -146,6 +230,128 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update { it.copy(rememberPosition = enabled) }
     }
 
+    @SuppressLint("UseKtx")
+    suspend fun setLibraryText(text: LibraryText) {
+        val validated = text.validated()
+        val saved = withContext(Dispatchers.IO) {
+            preferences.edit().putString("library_first_line", validated.firstLine)
+                .putString("library_second_line", validated.secondLine).putString("library_description", validated.description).commit()
+        }
+        check(saved) { "保存失败，请稍后重试" }
+        mutableState.update { it.copy(libraryText = validated) }
+    }
+
+    fun savePlaybackProgress() { history.checkpoint(engine.state.value) }
+    fun onBackground() { engine.pause(); savePlaybackProgress() }
+
+    fun reloadHistory() {
+        if (historyLoadingJob?.isActive == true) return
+        historyLoadingJob = viewModelScope.launch {
+            mutableState.update { it.copy(historyLoading = true, historyLoadError = false) }
+            try {
+                val saved = withContext(Dispatchers.IO) { historyStore.load() }
+                history.loaded(saved)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { mutableState.update { it.copy(historyLoadError = true) } }
+            finally { mutableState.update { it.copy(historyLoading = false) } }
+        }
+    }
+
+    fun retryHistorySave() { history.retrySave() }
+    fun removeHistory(record: WatchRecord) { history.remove(record.id) }
+    fun clearHistory() { history.clear() }
+
+    private fun cancelHistoryOpening() {
+        historyOpeningJob?.cancel()
+        mutableState.update { it.copy(historyOpeningId = null) }
+    }
+
+    fun openHistory(record: WatchRecord) {
+        val server = state.value.servers.firstOrNull { record.matches(it) }
+        val url = server?.let(record::resolve)?.toHttpUrl()
+        if (server == null || url == null) { messages.trySend("原连接已移除或修改，请从媒体库重新打开视频"); return }
+        cancelHistoryOpening()
+        historyOpeningJob = viewModelScope.launch {
+            mutableState.update { it.copy(historyOpeningId = record.id) }
+            try {
+                val cached = if (state.value.playbackCacheEnabled) withContext(Dispatchers.IO) { diskCache.cachedMedia(record.id) } else null
+                if (cached != null) {
+                    val entry = MediaEntry(url.toString(), record.name, false, cached.size, cached.version)
+                    val root = server.rootUrl.toHttpUrl()
+                    val siblings = cached.subtitles.mapNotNull { subtitle ->
+                        val target = root.newBuilder().encodedPath(subtitle.encodedPath).query(null).fragment(null).build()
+                        if (!isWithinRoot(root, target)) null else MediaEntry(target.toString(), subtitle.title, false, subtitle.sizeBytes, subtitle.modifiedAt)
+                    }
+                    ensureActive()
+                    if (state.value.tab == HomeTab.RECENT && state.value.video == null && state.value.servers.any { record.matches(it) }) {
+                        playVideo(server, entry, siblings, if (record.sameFile(entry)) record.resumePositionMs else 0)
+                    }
+                    return@launch
+                }
+                val parent = url.newBuilder().encodedPath(url.encodedPath.substringBeforeLast('/') + "/").build().toString()
+                val directory = repository.list(server, parent)
+                val entry = directory.entries.firstOrNull { it.isVideo && it.url.toHttpUrl().encodedPath == url.encodedPath }
+                if (entry == null) { messages.send("视频已移动或删除，请从媒体库重新打开"); return@launch }
+                ensureActive()
+                if (state.value.tab == HomeTab.RECENT && state.value.video == null && state.value.servers.any { record.matches(it) }) {
+                    playVideo(server, entry, directory.entries, if (record.sameFile(entry)) record.resumePositionMs else 0)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { messages.send("无法打开观看记录，请检查服务器连接后重试") }
+            finally { if (state.value.historyOpeningId == record.id) mutableState.update { it.copy(historyOpeningId = null) } }
+        }
+    }
+
+    fun setPlaybackCacheEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean("playback_cache_enabled", enabled) }
+        mutableState.update { it.copy(playbackCacheEnabled = enabled) }
+        applyCacheSettings()
+    }
+
+    fun setPlaybackCacheSizeGb(sizeGb: Int) {
+        if (sizeGb !in PlaybackCacheSizesGb) return
+        preferences.edit { putInt("playback_cache_size_gb", sizeGb) }
+        mutableState.update { it.copy(playbackCacheSizeGb = sizeGb) }
+        applyCacheSettings()
+    }
+
+    private fun applyCacheSettings(refreshUsage: Boolean = false) {
+        viewModelScope.launch {
+            cacheMutations.withLock {
+                mutableState.update { it.copy(playbackCacheBusy = true) }
+                try {
+                    val settings = state.value
+                    withContext(Dispatchers.IO) {
+                        diskCache.configure(settings.playbackCacheEnabled, settings.playbackCacheSizeGb * 1024L * 1024 * 1024)
+                        if (refreshUsage) diskCache.refreshUsage()
+                    }
+                    mutableState.update { it.copy(playbackCacheReady = true) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    messages.send("无法读取播放缓存，请稍后重试")
+                } finally { mutableState.update { it.copy(playbackCacheBusy = false) } }
+            }
+        }
+    }
+
+    fun clearPlaybackCache() {
+        if (state.value.playbackCacheBusy) return
+        viewModelScope.launch {
+            cacheMutations.withLock {
+                mutableState.update { it.copy(playbackCacheBusy = true) }
+                try {
+                    withContext(Dispatchers.IO) { diskCache.clear() }
+                    messages.send("播放缓存已清除")
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    messages.send("部分缓存未能清除，请稍后重试")
+                } finally { mutableState.update { it.copy(playbackCacheBusy = false) } }
+            }
+        }
+    }
+
     private fun loadDirectory(server: ServerConnection, url: String) {
         browsingJob?.cancel()
         mutableState.update { it.copy(browser = BrowserState(server, url, loading = true)) }
@@ -169,5 +375,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    override fun onCleared() { engine.release() }
+    override fun onCleared() {
+        history.finish(engine.state.value)
+        historyWrites.close()
+        engine.release()
+    }
 }
