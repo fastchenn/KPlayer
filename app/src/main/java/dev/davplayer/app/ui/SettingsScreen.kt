@@ -38,6 +38,7 @@ fun SettingsScreen(
     var editLibraryText by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val repositoryUrl = stringResource(R.string.repository_url)
     if (editLibraryText) LibraryTextEditor(state.libraryText, onDismiss = { editLibraryText = false }, onSave = onLibraryTextSave)
     if (confirmClearCache) AlertDialog(
         onDismissRequest = { confirmClearCache = false },
@@ -142,6 +143,17 @@ fun SettingsScreen(
                     Spacer(Modifier.height(6.dp)); Text("自己的收藏，自己的播放器。", color = MutedColor, fontSize = 12.sp)
                 }
                 Text("${dev.davplayer.app.BuildConfig.VERSION_NAME}\nmpv ${if (dev.davplayer.app.BuildConfig.DEBUG) "调试版" else "正式版"}", fontSize = 11.sp, color = MutedColor)
+            }
+            HorizontalDivider(color = LineColor, modifier = Modifier.padding(horizontal = 20.dp))
+            Row(Modifier.fillMaxWidth().clickable { uriHandler.openUri(repositoryUrl) }.padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("GitHub 仓库", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(6.dp))
+                    Text(repositoryUrl, color = MutedColor, fontSize = 12.sp)
+                }
+                Spacer(Modifier.width(12.dp))
+                Icon(Icons.Outlined.OpenInNew, null, tint = MutedColor, modifier = Modifier.size(20.dp))
             }
             TextButton(onClick = { showLicenses = true }, modifier = Modifier.padding(horizontal = 10.dp)) { Text("开源组件与许可") }
         }

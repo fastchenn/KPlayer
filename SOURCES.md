@@ -1,24 +1,24 @@
-# K Player 0.2.5 对应源码
+# K Player 0.3.0 对应源码
 
 应用源码采用 **GPL-3.0-or-later**，完整许可见根目录 `LICENSE`；第三方代码保留各自许可。
 
 ## 应用源码
 
-Release 的 `Source code (zip)` / `Source code (tar.gz)` 对应 `v0.2.5` 标签，包含应用、JNI 声明、Gradle Wrapper、原生依赖版本/哈希、构建及测试代码：
+Release 的 `Source code (zip)` / `Source code (tar.gz)` 对应 `v0.3.0` 标签，包含应用、JNI 声明、Gradle Wrapper、原生依赖版本/哈希、构建及测试代码：
 
-- [应用源码 ZIP](https://github.com/fastchenn/KPlayer/archive/refs/tags/v0.2.5.zip)
-- [应用源码 tar.gz](https://github.com/fastchenn/KPlayer/archive/refs/tags/v0.2.5.tar.gz)
-- [构建说明](https://github.com/fastchenn/KPlayer/blob/v0.2.5/README.md)
+- [应用源码 ZIP](https://github.com/fastchenn/KPlayer/archive/refs/tags/v0.3.0.zip)
+- [应用源码 tar.gz](https://github.com/fastchenn/KPlayer/archive/refs/tags/v0.3.0.tar.gz)
+- [构建说明](https://github.com/fastchenn/KPlayer/blob/v0.3.0/README.md)
 
 按 README 使用 JDK 17、Android SDK 35 / Build Tools 35.0.0 和 Gradle Wrapper 构建。
 默认构建下载已校验的官方原生二进制，不需要 NDK。若要替换原生组件，按下面步骤重建，
 将对应 ABI 的十个 `.so` 放入 `playback/mpv/build/generated/mpv/jniLibs/<abi>/`，
 再用 `./gradlew :app:assembleDebug -x :playback:mpv:prepareMpvNative` 打包自建库。
-发布的非调试 Release APK 沿用维护者原有 Android Debug 证书；源码不包含私钥。默认 Release 未配置签名，重新构建后可用自己的证书安装。
+0.3.0 发布附件使用与已测试 APK 相同的 Debug 构建类型，由本次 GitHub Actions 生成的临时 Android Debug 证书签名；源码不包含私钥。该证书与 0.2.5 维护者证书、此前 CI 测试包的证书不同，不能保证覆盖安装。默认 Release 构建未配置签名，重新构建后可用自己的证书安装。
 
 ## 原生组件源码和构建脚本
 
-Release 的 `k-player-0.2.5-native-sources.zip` 附件包含 mpv-android、libmpv、FFmpeg 和所有列出的原生依赖源码归档、
+Release 的 `k-player-0.3.0-native-sources.zip` 附件包含 mpv-android、libmpv、FFmpeg 和所有列出的原生依赖源码归档、
 FreeType/libplacebo 使用的固定子模块源码、许可文本、来源清单及 SHA-256；无需依赖浮动分支。
 `native-sources.json` 记录每个版本、commit、原始下载地址、归档名和哈希。
 源码未作本地下游修改；mpv-android 归档里的 `buildscripts/` 包含上游构建脚本和补丁。
@@ -38,7 +38,7 @@ FreeType/libplacebo 使用的固定子模块源码、许可文本、来源清单
 维护者重新生成此附件（Python 3.11 或更新版本）：
 
 ```sh
-python tools/package_native_sources.py --output dist/0.2.5/k-player-0.2.5-native-sources.zip
+python tools/package_native_sources.py --output dist/0.3.0/k-player-0.3.0-native-sources.zip
 ```
 
 脚本只从清单的上游地址下载，核验锁定的 SHA-256，保留压缩源码原件，不执行下载内容。
