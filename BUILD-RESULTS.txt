@@ -1,5 +1,5 @@
-DAV Player 0.1.0-shell — 构建验证记录
-日期：2026-10-18 15:42（Asia/Shanghai）
+K Player 0.1.0-shell — 构建验证记录
+日期：2026-10-18 15:53（Asia/Shanghai）
 
 已执行：
   Gradle Wrapper --version：通过（Gradle 8.11.1，SHA-256 校验启用）

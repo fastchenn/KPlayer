@@ -11,11 +11,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.davplayer.app.AppState
+import dev.davplayer.app.R
 
 @Composable
 fun RecentScreen() {
@@ -61,7 +63,7 @@ fun SettingsScreen(state: AppState, onHardware: (Boolean) -> Unit, onRemember: (
         Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = PanelColor)) {
             Row(Modifier.fillMaxWidth().padding(20.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("DAV Player", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.app_name), fontSize = 15.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp)); Text("自己的收藏，自己的播放器。", color = MutedColor, fontSize = 12.sp)
                 }
                 Text("0.1.0\n壳子版", fontSize = 11.sp, color = MutedColor)

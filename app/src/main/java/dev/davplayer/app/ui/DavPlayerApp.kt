@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -17,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.davplayer.app.AppViewModel
 import dev.davplayer.app.HomeTab
+import dev.davplayer.app.R
 import dev.davplayer.app.data.DemoLibrary
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,7 +56,7 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
             snackbarHost = { SnackbarHost(snackbars) },
             topBar = {
                 if (state.browser == null) TopAppBar(
-                    title = { Text("DAV Player", fontWeight = FontWeight.SemiBold) },
+                    title = { Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold) },
                     actions = { Tag("mpv"); Spacer(Modifier.width(20.dp)) },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = CanvasColor),
                 )

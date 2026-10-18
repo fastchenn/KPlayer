@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DavPlayer"
+rootProject.name = "KPlayer"
 include(":app", ":playback:api", ":playback:mpv")

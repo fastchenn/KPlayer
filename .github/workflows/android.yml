@@ -24,5 +24,5 @@ jobs:
       - run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: dav-player-shell-debug
+          name: k-player-shell-debug
           path: app/build/outputs/apk/debug/app-debug.apk

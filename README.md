@@ -1,6 +1,6 @@
-# DAV Player
+# K Player
 
-安卓 WebDAV 播放器的第一阶段工程壳子，暂用名 DAV Player。手机端、中文、深色界面，最低 Android 8.0。
+安卓 WebDAV 播放器 K Player 的第一阶段工程壳子。手机端、中文、深色界面，最低 Android 8.0。
 
 ## 这一版的范围
 
@@ -14,7 +14,7 @@
 
 ## 打开和构建
 
-1. 在 Android Studio 中打开本目录 `DavPlayer`，选择 JDK 17。
+1. 在 Android Studio 中打开项目根目录（包含 `settings.gradle.kts` 的目录），选择 JDK 17。
 2. 安装 Android SDK Platform 35 和 Build Tools 35.0.0，等待 Gradle 同步。
 3. 运行 `app` 到 Android 8.0 或更新的设备。当前壳子不需要 NDK。
 
