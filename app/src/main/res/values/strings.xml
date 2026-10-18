@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">K Player</string>
+    <string name="repository_url">https://github.com/fastchenn/KPlayer</string>
 </resources>

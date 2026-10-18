@@ -69,6 +69,7 @@ internal class NativeMpvClient(
     fun speed(speed: Float) { MPVLib.setPropertyDouble("speed", speed.toDouble()) }
     fun volume(percent: Double) { MPVLib.setPropertyDouble("volume", percent) }
     fun eof() = MPVLib.getPropertyBoolean("eof-reached") == true
+    fun seekableRangesJson(): String? = if (created) MPVLib.getPropertyString("demuxer-cache-state") else null
     fun addSubtitle(url: String, title: String) {
         // The pinned JNI command bridge is synchronous. mpv's async prefix keeps
         // remote subtitle probing off the UI thread; track-list reports completion.

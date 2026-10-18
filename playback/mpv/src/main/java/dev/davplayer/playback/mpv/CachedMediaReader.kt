@@ -1,6 +1,7 @@
 package dev.davplayer.playback.mpv
 
 import dev.davplayer.playback.api.PlaybackRequest
+import dev.davplayer.playback.api.CachedTimeRange
 import java.io.IOException
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -37,8 +38,34 @@ internal class CachedMediaReader(
         Thread(runnable, "KPlayer-cache-block").apply { isDaemon = true }
     }
     @Volatile private var closed = false
-    private var metadata: Metadata? = null
+    @Volatile private var metadata: Metadata? = null
     private var probed = false
+    private val deliveredLock = Any()
+    private var delivered = emptyList<CachedByteRange>()
+    @Volatile private var timelineEligible = true
+
+    /** Called after observing mpv, so dependencies include all bytes it could have consumed. */
+    fun cachedTimeline(observed: List<CachedTimeRange>, durationMs: Long?): List<CachedTimeRange> {
+        val media = metadata?.media ?: return emptyList()
+        val available = cache.byteRanges(media.key)
+        if (durationMs != null && durationMs > 0 && available.any { it.start == 0L && it.end >= media.size }) {
+            return cache.timeline(media.key, listOf(CachedTimeRange(0, durationMs)),
+                listOf(CachedByteRange(0, media.size)), generation)
+        }
+        val dependencies = synchronized(deliveredLock) { delivered }
+        return cache.timeline(media.key, if (timelineEligible) observed else emptyList(),
+            if (timelineEligible) dependencies else emptyList(), generation)
+    }
+
+    fun bypassed() { timelineEligible = false }
+
+    private fun delivered(position: Long, count: Int) {
+        if (count <= 0) return
+        synchronized(deliveredLock) {
+            delivered = mergeByteRanges(delivered + CachedByteRange(position, position + count))
+            if (delivered.size > 256) { delivered = emptyList(); timelineEligible = false }
+        }
+    }
 
     fun serve(method: String, incoming: Map<String, String>, output: OutputStream): Boolean {
         if (method !in setOf("GET", "HEAD") || !cache.enabled || incoming.keys.any {
@@ -72,6 +99,7 @@ internal class CachedMediaReader(
                 val prefix = cache.readPrefix(meta.media.key, index, length) ?: synchronized(held) { held[index] } ?: ByteArray(0)
                 if (prefix.size >= to) {
                     if (!headersSent) { output.write(headers); headersSent = true }
+                    delivered(position, to - from)
                     output.write(prefix, from, to - from)
                 } else {
                     val download = download(meta, index, length, prefix)
@@ -83,6 +111,7 @@ internal class CachedMediaReader(
                         }
                         if (available <= from) throw IOException("Incomplete media block")
                         if (!headersSent) { output.write(headers); headersSent = true }
+                        delivered(blockStart + from, available - from)
                         output.write(download.bytes, from, available - from)
                         from = available
                     }

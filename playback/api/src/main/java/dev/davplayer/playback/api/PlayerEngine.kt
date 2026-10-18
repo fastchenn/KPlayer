@@ -45,6 +45,8 @@ data class PlaybackState(
     val positionKnown: Boolean = false,
     /** End of the contiguously demuxed/cacheable range, in media time. Null when unknown. */
     val bufferedUntilMs: Long? = null,
+    /** Verified persistent ranges; unlike bufferedUntilMs, these survive reopening. */
+    val cachedRanges: List<CachedTimeRange> = emptyList(),
 )
 
 /** An explicitly discovered sidecar; credentials follow its own URL, not the video's redirect. */

@@ -1,6 +1,7 @@
 package dev.davplayer.playback.mpv
 
 import dev.davplayer.playback.api.PlaybackRequest
+import dev.davplayer.playback.api.CachedTimeRange
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.first
@@ -96,6 +97,39 @@ class PlaybackCacheStreamTest {
             assertArrayEquals("def".toByteArray(), read(source, "bytes=-3"))
             assertEquals(content.size.toLong(), downloaded.get())
             assertEquals(2, server.requestCount) // one validation HEAD and one video block
+        }
+    }
+
+    @Test fun timeRangesRestoreFromDiskAndCachedReadsNeedNoNewRequests() {
+        content = ByteArray(PlaybackDiskCache.BLOCK_BYTES * 3) { (it % 127).toByte() }
+        val directory = temporary.newFolder()
+        val cache = PlaybackDiskCache(directory)
+        val request = request(cacheIdentity = "timeline-file", knownSize = true)
+        val times = listOf(CachedTimeRange(0, 2000), CachedTimeRange(20_000, 22_000))
+        val tail = PlaybackDiskCache.BLOCK_BYTES * 2
+        source(cache, request).use { source ->
+            read(source, "bytes=0-3")
+            read(source, "bytes=$tail-${tail + 3}")
+            awaitCache(cache, PlaybackDiskCache.BLOCK_BYTES * 2L)
+            assertEquals(times, source.cachedTimeline(times, 60_000))
+        }
+        val count = server.requestCount
+        source(PlaybackDiskCache(directory), request).use { source ->
+            assertArrayEquals(content.copyOfRange(0, 4), read(source, "bytes=0-3"))
+            assertEquals(times, source.cachedTimeline(emptyList(), 60_000))
+            assertArrayEquals(content.copyOfRange(tail, tail + 4), read(source, "bytes=$tail-${tail + 3}"))
+        }
+        assertEquals(count, server.requestCount)
+    }
+
+    @Test fun completeFileCanAdvertiseItsWholeDurationAndClearWithdrawsIt() {
+        val cache = PlaybackDiskCache(temporary.newFolder())
+        source(cache).use { source ->
+            read(source)
+            awaitCache(cache)
+            assertEquals(listOf(CachedTimeRange(0, 60_000)), source.cachedTimeline(emptyList(), 60_000))
+            cache.clear()
+            assertTrue(source.cachedTimeline(listOf(CachedTimeRange(0, 60_000)), 60_000).isEmpty())
         }
     }
 

@@ -83,6 +83,7 @@ class PersistentPlaybackTest {
                 assertEquals(1, origin.listings.get())
                 assertEquals(0, origin.heads.get()) // Sizes came from the original WebDAV listing.
                 assertNull(player.state.value.playbackCacheError)
+                await("Persistent cache ranges were not published") { player.engine.state.value.cachedRanges.any { it.startMs == 0L && it.endMs >= 5_000 } }
                 onMain { player.back() }
                 await("History checkpoint was not saved") {
                     WatchHistoryStore(context.noBackupFilesDir.resolve("watch-history.bin")).load().any {
@@ -132,6 +133,9 @@ class PersistentPlaybackTest {
             assertTrue("Offline native video is black", android.graphics.Color.red(bitmap.getPixel(32, 32)) > 100)
             bitmap.recycle()
             assertNull(player.state.value.playbackCacheError)
+            await("Persistent ranges did not return after reopening") { player.engine.state.value.cachedRanges.any { it.startMs == 0L && it.endMs >= 5_000 } }
+            onMain { player.clearPlaybackCache() }
+            await("Cleared cache ranges remained visible") { player.state.value.playbackCacheUsedBytes == 0L && player.engine.state.value.cachedRanges.isEmpty() }
             println("Cold offline history startup: $elapsed ms; four seeks, subtitle and GPU pixels passed")
         } finally { onMain { activity.finish() }; instrumentation.waitForIdleSync() }
     }
