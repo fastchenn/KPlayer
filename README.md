@@ -2,6 +2,26 @@
 
 安卓 WebDAV 视频播放器，中文深色界面，使用 libmpv 播放内核。最低 Android 8.0，发布 APK 支持 **arm64-v8a**。
 
+[下载 Android APK](https://github.com/fastchenn/KPlayer/releases/download/v0.3.0/k-player-0.3.0-arm64.apk) · [查看发布说明](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.0)
+
+## 界面预览
+
+实际 Android 界面截图，点击图片可查看原图。
+
+<p align="center">
+  <a href="docs/screenshots/home.jpg"><img src="docs/screenshots/home.jpg" alt="媒体库首页" height="360"></a>
+  <a href="docs/screenshots/browser.jpg"><img src="docs/screenshots/browser.jpg" alt="WebDAV 目录浏览" height="360"></a>
+  <a href="docs/screenshots/player-portrait.jpg"><img src="docs/screenshots/player-portrait.jpg" alt="竖屏播放与分段缓存白条" height="360"></a>
+  <a href="docs/screenshots/history.jpg"><img src="docs/screenshots/history.jpg" alt="观看历史与断点续播" height="360"></a>
+  <a href="docs/screenshots/settings.jpg"><img src="docs/screenshots/settings.jpg" alt="缓存管理、播放设置与关于" height="360"></a>
+</p>
+<p align="center"><sub>媒体库首页 · 目录浏览 · 竖屏播放 · 观看记录 · 缓存管理与关于</sub></p>
+
+<p align="center">
+  <a href="docs/screenshots/player-landscape.jpg"><img src="docs/screenshots/player-landscape.jpg" alt="横屏全屏播放与分段缓存白条" width="900"></a>
+</p>
+<p align="center"><sub>横屏播放：进度条显示多个不连续的缓存区间</sub></p>
+
 ## 下载
 
 从 [0.3.0 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.0) 下载 `k-player-0.3.0-arm64.apk`。同页提供原生组件对应源码、APK 签名信息和 `SHA256SUMS.txt`。
