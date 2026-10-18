@@ -246,30 +246,15 @@ private fun PlayerVideo(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun PlayerProgress(engine: PlayerEngine, state: PlaybackState, controllable: Boolean, onSeeking: (Boolean) -> Unit) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     val currentSeeking by rememberUpdatedState(onSeeking)
     DisposableEffect(Unit) { onDispose { currentSeeking(false) } }
     val duration = state.durationMs?.takeIf { it > 0 }
     val positionFraction = if (duration != null) (state.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
-    val bufferedFraction = if (duration != null) {
-        (state.bufferedUntilMs?.toFloat()?.div(duration))?.coerceIn(0f, 1f)
-    } else null
+    val trackColor = MaterialTheme.colorScheme.outline
     Box(Modifier.fillMaxWidth().height(36.dp), contentAlignment = Alignment.Center) {
-        if (bufferedFraction != null && bufferedFraction > positionFraction) {
-            val track = MaterialTheme.colorScheme.outline
-            Canvas(Modifier.fillMaxWidth().height(6.dp)) {
-                drawRoundRect(
-                    color = track,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2f),
-                )
-                drawRoundRect(
-                    color = Color.White.copy(alpha = 0.36f),
-                    size = androidx.compose.ui.geometry.Size(size.width * bufferedFraction, size.height),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2f),
-                )
-            }
-        }
         Slider(
             value = dragFraction ?: positionFraction,
             onValueChange = { dragFraction = it; onSeeking(true) },
@@ -283,6 +268,26 @@ fun PlayerProgress(engine: PlayerEngine, state: PlaybackState, controllable: Boo
             colors = SliderDefaults.colors(
                 inactiveTrackColor = Color.Transparent,
             ),
+            track = {
+                Canvas(Modifier.fillMaxWidth().height(6.dp)) {
+                    drawRoundRect(color = trackColor,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2f))
+                    if (duration != null) for (range in state.cachedRanges) {
+                        val start = (range.startMs.toDouble() / duration).coerceIn(0.0, 1.0).toFloat()
+                        val end = (range.endMs.toDouble() / duration).coerceIn(0.0, 1.0).toFloat()
+                        if (end > start) drawRect(
+                            color = Color.White.copy(alpha = 0.65f),
+                            topLeft = androidx.compose.ui.geometry.Offset(size.width * start, 0f),
+                            size = androidx.compose.ui.geometry.Size(size.width * (end - start), size.height),
+                        )
+                    }
+                    // A thin play-position line keeps cached segments visible on both sides of the thumb.
+                    val height = 2.dp.toPx().coerceAtMost(size.height)
+                    drawRect(color = MintColor,
+                        topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - height) / 2),
+                        size = androidx.compose.ui.geometry.Size(size.width * (dragFraction ?: positionFraction), height))
+                }
+            },
         )
     }
     Row(Modifier.fillMaxWidth()) {

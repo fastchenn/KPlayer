@@ -1,6 +1,7 @@
 package dev.davplayer.playback.mpv
 
 import dev.davplayer.playback.api.PlaybackPhase
+import dev.davplayer.playback.api.CachedTimeRange
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -98,11 +99,15 @@ class MpvPlaybackStateTest {
         state.property("seekable", true)
         state.property("time-pos", 100.0)
         state.property("duration", 200.0)
+        state.cachedRanges(listOf(CachedTimeRange(0, 30_000), CachedTimeRange(90_000, 110_000)))
+        state.property("demuxer-cache-time", 120.0)
+        assertEquals(2, state.value.cachedRanges.size)
         state.property("eof-reached", true)
         state.prepare(1f)
         assertFalse(state.value.seekable)
         assertEquals(0L, state.value.positionMs)
         assertNull(state.value.durationMs)
+        assertTrue(state.value.cachedRanges.isEmpty())
         assertEquals(1f, state.value.speed)
         assertEquals(PlaybackPhase.PREPARING, state.value.phase)
         state.idle()

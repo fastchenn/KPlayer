@@ -12,6 +12,9 @@ import `is`.xyz.mpv.MPVLib
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Foreground player. Commands and published state belong to the main thread. */
 class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache? = null) : PlayerEngine {
@@ -43,11 +46,16 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
     private var released = false
     private var networkError: String? = null
     private var speedMeter = NetworkSpeedMeter()
+    private val timelineWorker = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "KPlayer-cache-timeline").apply { isDaemon = true }
+    }
+    private val timelinePending = AtomicBoolean(false)
     private val speedPolling = object : Runnable {
         override fun run() {
             if (client == null || released) return
             val active = state.value.phase in setOf(PlaybackPhase.PREPARING, PlaybackPhase.PLAYING, PlaybackPhase.BUFFERING, PlaybackPhase.PAUSED)
             reducer.networkSpeed(if (active) speedMeter.sample() else 0)
+            refreshCachedTimeline()
             publish()
             main.postDelayed(this, 1_000)
         }
@@ -104,6 +112,7 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
                                 MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
                                     networkError = null
                                     reducer.fileLoaded()
+                                    refreshCachedTimeline()
                                     loadExternalSubtitles(current)
                                     refreshTracks()
                                 }
@@ -122,7 +131,7 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
             native.attach(surface!!)
             if (width > 0 && height > 0) native.size(width, height)
             native.load(source!!.url, current.startPositionMs.coerceAtLeast(0))
-            main.postDelayed(speedPolling, 1_000)
+            main.post(speedPolling)
         } catch (_: Exception) { fail("播放组件初始化失败，请重新打开视频或尝试关闭硬件解码") }
     }
 
@@ -224,6 +233,7 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
         released = true
         surface = null
         main.removeCallbacksAndMessages(null)
+        timelineWorker.shutdown()
     }
 
     private fun acquireFocus(): Boolean {
@@ -235,6 +245,7 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
     private fun abandonFocus() { audio.abandonAudioFocusRequest(focusRequest); hasFocus = false }
 
     private fun disposeSession() {
+        refreshCachedTimeline(finalSnapshot = true)
         generation++ // Ignore queued callbacks belonging to the old file.
         main.removeCallbacks(speedPolling)
         reducer.networkSpeed(0)
@@ -251,6 +262,30 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
     }
 
     private fun fail(message: String) { disposeSession(); reducer.fail(message); publish() }
+
+    private fun refreshCachedTimeline(finalSnapshot: Boolean = false) {
+        val currentSource = source ?: return
+        val native = client ?: return
+        if (!finalSnapshot && !timelinePending.compareAndSet(false, true)) return
+        // Read native state while the main-thread-owned client is alive. Parse and do all
+        // disk/index operations on the worker; late results from an old session are ignored.
+        val json = native.seekableRangesJson()
+        val duration = state.value.durationMs
+        val session = generation
+        try {
+            timelineWorker.execute {
+                try {
+                    val ranges = currentSource.cachedTimeline(parseSeekableRanges(json), duration)
+                    if (!finalSnapshot) main.post {
+                        if (!released && generation == session && source === currentSource) {
+                            reducer.cachedRanges(ranges)
+                            publish()
+                        }
+                    }
+                } finally { if (!finalSnapshot) timelinePending.set(false) }
+            }
+        } catch (_: RejectedExecutionException) { if (!finalSnapshot) timelinePending.set(false) }
+    }
     private fun publish() {
         if (reducer.value.phase == PlaybackPhase.ENDED || reducer.value.phase == PlaybackPhase.ERROR) abandonFocus()
         mutableState.value = reducer.value

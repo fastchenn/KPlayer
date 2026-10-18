@@ -43,6 +43,7 @@ internal class MpvPlaybackState {
 
     fun tracks(tracks: List<MediaTrack>) { value = value.copy(tracks = tracks) }
     fun networkSpeed(bytesPerSecond: Long) { value = value.copy(networkBytesPerSecond = bytesPerSecond.coerceAtLeast(0)) }
+    fun cachedRanges(ranges: List<CachedTimeRange>) { value = value.copy(cachedRanges = ranges) }
 
     fun endFile(eof: Boolean, errorMessage: String? = null) {
         if (eof || ended) { ended = true; refreshPhase() }

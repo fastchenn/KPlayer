@@ -11,6 +11,7 @@ import java.security.MessageDigest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import dev.davplayer.playback.api.PlaybackRequest
+import dev.davplayer.playback.api.CachedTimeRange
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 data class CachedSubtitle(val encodedPath: String, val title: String, val sizeBytes: Long? = null, val modifiedAt: String? = null)
@@ -25,6 +26,7 @@ class PlaybackDiskCache(
     private val lock = Any()
     private data class Entry(val file: File, val size: Long)
     private val entries = LinkedHashMap<String, Entry>(16, .75f, true)
+    private val timelines = mutableMapOf<String, CachedTimeline>()
     private val usage = MutableStateFlow(0L)
     val usedBytes = usage.asStateFlow()
     private val issue = MutableStateFlow<String?>(null)
@@ -54,7 +56,8 @@ class PlaybackDiskCache(
         epoch++ // An in-flight download cannot put deleted data back after confirmation.
         var failed = false
         entries.values.toList().forEach { if (it.file.exists() && !it.file.delete()) failed = true }
-        directory.listFiles().orEmpty().filter { it.name.endsWith(".media") }.forEach { if (!it.delete()) failed = true }
+        directory.listFiles().orEmpty().filter { it.name.endsWith(".media") || it.name.endsWith(".ranges") }.forEach { if (!it.delete()) failed = true }
+        timelines.clear()
         initialized = false
         initialize()
         if (failed) throw IOException("Some cache files could not be removed")
@@ -64,6 +67,27 @@ class PlaybackDiskCache(
     internal fun directory(): File = directory
 
     internal fun generation(): Long = synchronized(lock) { epoch }
+
+    /** Inspect real lengths without touching LRU recency; a status poll must not keep data alive. */
+    internal fun byteRanges(key: String): List<CachedByteRange> = synchronized(lock) {
+        initialize()
+        mergeByteRanges(entries.values.mapNotNull { entry ->
+            if (!entry.file.name.startsWith("$key.")) return@mapNotNull null
+            val block = entry.file.name.removePrefix("$key.").removeSuffix(".blk").toLongOrNull() ?: return@mapNotNull null
+            val size = entry.file.length()
+            if (size !in 1..BLOCK_BYTES.toLong() || block > (Long.MAX_VALUE - BLOCK_BYTES) / BLOCK_BYTES) return@mapNotNull null
+            val start = block * BLOCK_BYTES
+            CachedByteRange(start, start + size)
+        })
+    }
+
+    internal fun timeline(key: String, observed: List<CachedTimeRange>, dependencies: List<CachedByteRange>, generation: Long): List<CachedTimeRange> = synchronized(lock) {
+        if (!enabled || !key.matches(Regex("[a-f0-9]{64}"))) return emptyList()
+        initialize()
+        timelines.getOrPut(key) { CachedTimeline(File(directory, "$key.ranges")) }
+            .update(if (generation == epoch) observed else emptyList(),
+                if (generation == epoch) dependencies else emptyList(), byteRanges(key))
+    }
 
     /** Only actual bytes count as a cache hit. A metadata-only entry is insufficient. */
     fun cachedMedia(identity: String): CachedMediaInfo? = synchronized(lock) {
@@ -215,6 +239,8 @@ class PlaybackDiskCache(
         files.filter { it.isFile && it.name.endsWith(".part") }.forEach { it.delete() }
         files.filter { it.isFile && it.name.matches(Regex("[a-f0-9]{64}\\.[0-9]+\\.blk")) }
             .sortedBy(File::lastModified).forEach { entries[it.name] = Entry(it, it.length()) }
+        val payloadKeys = entries.keys.map { it.substringBefore('.') }.toSet()
+        files.filter { it.name.endsWith(".ranges") && it.name.removeSuffix(".ranges") !in payloadKeys }.forEach { it.delete() }
         usage.value = entries.values.sumOf { it.size }
         initialized = true
         trimTo(maxBytes)
@@ -233,6 +259,14 @@ class PlaybackDiskCache(
         if (!file.exists() || file.delete()) {
             entries.remove(name)
             usage.value = (usage.value - entry.size).coerceAtLeast(0)
+            val key = name.substringBefore('.')
+            val timelineFile = File(directory, "$key.ranges")
+            if ((key in timelines || timelineFile.exists()) && directory.listFiles().orEmpty().none {
+                    it.name.startsWith("$key.") && it.name.endsWith(".blk") && it.length() > 0
+                }) {
+                timelines.remove(key)
+                timelineFile.delete()
+            }
         }
     }
 

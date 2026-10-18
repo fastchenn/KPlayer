@@ -1,6 +1,7 @@
 package dev.davplayer.playback.mpv
 
 import dev.davplayer.playback.api.PlaybackRequest
+import dev.davplayer.playback.api.CachedTimeRange
 import java.io.BufferedInputStream
 import java.io.Closeable
 import java.io.IOException
@@ -69,6 +70,9 @@ internal class LoopbackMediaSource(
         )
     }
 
+    fun cachedTimeline(observed: List<CachedTimeRange>, durationMs: Long?): List<CachedTimeRange> =
+        cachedReader?.cachedTimeline(observed, durationMs).orEmpty()
+
     init {
         thread(name = "KPlayer-media-listener", isDaemon = true) {
             while (!closed) {
@@ -123,6 +127,7 @@ internal class LoopbackMediaSource(
             respond(output, 400); return
         }
         if (cachedReader?.serve(parts[0], headers, output) == true) return
+        if (parts[0] == "GET") cachedReader?.bypassed()
         val (response, call) = try { fetch(parts[0], headers) } catch (_: IllegalArgumentException) {
             respond(output, 400); return
         } catch (error: IOException) {
