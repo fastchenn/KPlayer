@@ -122,7 +122,7 @@ jobs:
           (cd "$DIRECTORY" && sha256sum --check SHA256SUMS.txt)
           sed '1{/^# /d;}' "docs/releases/$TAG.md" > "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG" --target "$GITHUB_SHA" --draft \
-            --title "$VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+            --title "K Player $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
           gh release upload "$TAG" "$DIRECTORY"/*
           gh release edit "$TAG" --draft=false --latest
           echo "Published https://github.com/$GH_REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
