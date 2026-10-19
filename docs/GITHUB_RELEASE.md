@@ -22,7 +22,9 @@ GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上�
 
 ## 发布新版本
 
-可以直接告诉连接 GitHub 的 AI：“更新 KPlayer，完成后通过 Signed release 发布 0.3.3 正式版”。具体步骤为：
+Release 标题只写版本号，例如 `0.3.3`，不添加产品名或“正式版”等前后缀。`docs/releases/v<版本>.md` 直接以“更新内容”开头，不重复版本标题；发布工作流也会移除说明文件首行的一级标题。
+
+可以直接告诉连接 GitHub 的 AI：“更新 KPlayer，完成后通过 Signed release 发布 0.3.3”。具体步骤为：
 
 1. 在 `app/build.gradle.kts` 更新 `versionName` 和递增的 `versionCode`，例如 0.3.3 / 11。
 2. 同步 `playback/mpv/native-sources.json` 的 `release`、`SOURCES.md`、README 下载链接以及 `docs/releases/v<版本>.md`。整理本次真实验证范围；播放和原生依赖没有变化时不要虚构设备测试。

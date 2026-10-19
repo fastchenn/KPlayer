@@ -1,0 +1,22 @@
+name: Update 0.3.3 release text
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/update-release-0.3.3.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Update release title and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit v0.3.3 --title "0.3.3" --notes-file docs/releases/v0.3.3.md
