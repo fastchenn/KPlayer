@@ -36,6 +36,11 @@ android {
         }
     }
     buildTypes {
+        debug {
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-gesture-test"
+            resValue("string", "app_name", "K Player 测试版")
+        }
         release {
             isDebuggable = false
             signingConfig = signingConfigs.findByName("maintainerRelease")
