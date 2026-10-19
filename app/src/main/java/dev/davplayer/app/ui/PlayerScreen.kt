@@ -7,7 +7,6 @@ import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,7 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,30 +52,40 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
     var menuOpen by remember { mutableStateOf(false) }
     var seeking by remember { mutableStateOf(false) }
     val boost = remember(engine, target.entry.url) { HoldToDoubleSpeed(engine) }
+    val swipe = remember(engine, target.entry.url) { SwipeToSeek(engine) }
+    val seekPreview = swipe.preview
     val lifecycleOwner = LocalLifecycleOwner.current
+    var gesturesEnabled by remember(lifecycleOwner) { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
     val canBoost = ready && engine.capabilities.speed &&
         state.phase in setOf(PlaybackPhase.PLAYING, PlaybackPhase.BUFFERING)
     val playing = state.phase == PlaybackPhase.PLAYING || state.phase == PlaybackPhase.BUFFERING
+    val canSwipeSeek = controllable && engine.capabilities.seek && state.seekable && (state.durationMs ?: 0) > 0
 
     PlayerWindowMode(fullscreen, fullscreenPortrait)
-    DisposableEffect(boost, lifecycleOwner) {
+    DisposableEffect(boost, swipe, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) boost.stop()
+            gesturesEnabled = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+                boost.stop()
+                swipe.cancel()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             boost.stop()
+            swipe.cancel()
         }
     }
-    LaunchedEffect(fullscreen, controlsVisible, controlsInteraction, menuOpen, seeking, boost.active, playing) {
-        if (fullscreen && controlsVisible && playing && !menuOpen && !seeking && !boost.active) {
+    LaunchedEffect(fullscreen, controlsVisible, controlsInteraction, menuOpen, seeking, boost.active, seekPreview != null, playing) {
+        if (fullscreen && controlsVisible && playing && !menuOpen && !seeking && !boost.active && seekPreview == null) {
             delay(4_000)
             controlsVisible = false
         }
     }
     fun leaveFullscreen() {
         boost.stop()
+        swipe.cancel()
         fullscreen = false
         controlsVisible = true
         menuOpen = false
@@ -104,9 +115,12 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
             Column(Modifier.fillMaxSize()) {
                 PlayerVideo(
                     target = target, engine = engine, state = state, ready = ready, landscape = landscape,
-                    fullscreen = fullscreen, canBoost = canBoost,
+                    fullscreen = fullscreen, canBoost = canBoost, canSeek = canSwipeSeek,
+                    gesturesEnabled = gesturesEnabled,
                     onTap = { controlsVisible = !controlsVisible },
                     onHold = boost::start, onRelease = boost::stop,
+                    onSeekStart = { swipe.start(it); controlsInteraction++ }, onSeekDrag = swipe::drag,
+                    onSeekFinish = swipe::finish, onSeekCancel = swipe::cancel,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
                 if (!fullscreen) {
@@ -139,7 +153,7 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                 }
             }
             if (fullscreen) {
-                if (controlsVisible && !boost.active) {
+                if (controlsVisible && !boost.active && seekPreview == null) {
                     Row(
                         Modifier.align(Alignment.TopCenter).fillMaxWidth()
                             .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .75f), Color.Transparent)))
@@ -169,15 +183,16 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                         )
                     }
                 }
-                if (boost.active) {
-                    Surface(
+                val gestureLabel = seekPreview?.label ?: if (boost.active) "2X" else null
+                if (gestureLabel != null) {
+                    Text(
+                        text = gestureLabel, color = MintColor, fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        style = TextStyle(shadow = Shadow(color = Color.Black.copy(alpha = .85f), blurRadius = 6f)),
                         modifier = Modifier.align(Alignment.TopCenter)
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top))
-                            .padding(top = 24.dp),
-                        shape = RoundedCornerShape(24.dp), color = Color.Black.copy(alpha = .7f),
-                    ) {
-                        Text("2× 倍速播放中 · 松手恢复", color = MintColor, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-                    }
+                            .padding(top = 36.dp),
+                    )
                 }
             }
         }
@@ -192,12 +207,19 @@ private fun CacheSpeed(bytesPerSecond: Long, modifier: Modifier = Modifier) {
 @Composable
 private fun PlayerVideo(
     target: VideoTarget, engine: PlayerEngine, state: PlaybackState, ready: Boolean, landscape: Boolean,
-    fullscreen: Boolean, canBoost: Boolean, onTap: () -> Unit, onHold: () -> Unit, onRelease: () -> Unit,
+    fullscreen: Boolean, canBoost: Boolean, canSeek: Boolean, gesturesEnabled: Boolean,
+    onTap: () -> Unit, onHold: () -> Unit, onRelease: () -> Unit,
+    onSeekStart: (Float) -> Unit, onSeekDrag: (Float) -> Unit,
+    onSeekFinish: () -> Unit, onSeekCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val currentTap by rememberUpdatedState(onTap)
     val currentHold by rememberUpdatedState(onHold)
     val currentRelease by rememberUpdatedState(onRelease)
+    val currentSeekStart by rememberUpdatedState(onSeekStart)
+    val currentSeekDrag by rememberUpdatedState(onSeekDrag)
+    val currentSeekFinish by rememberUpdatedState(onSeekFinish)
+    val currentSeekCancel by rememberUpdatedState(onSeekCancel)
     Box(modifier, contentAlignment = Alignment.Center) {
         if (ready) {
             AndroidView(
@@ -217,15 +239,15 @@ private fun PlayerVideo(
                 Text(if (target.server.isDemo) "这是离线示例，没有可播放的视频。请添加自己的 WebDAV 连接。" else state.message.orEmpty(), color = MutedColor, fontSize = 12.sp, textAlign = TextAlign.Center, lineHeight = 20.sp)
             }
         }
-        // Only taps and long presses are handled; vertical swipes never change brightness or volume.
-        if (fullscreen) Box(
-            Modifier.matchParentSize().pointerInput(canBoost) {
-                detectTapGestures(
+        // Vertical swipes are ignored; taps, holds and horizontal seeking are mutually exclusive.
+        if (fullscreen && gesturesEnabled) Box(
+            Modifier.matchParentSize().pointerInput(canBoost, canSeek) {
+                detectPlayerGestures(
+                    canBoost = canBoost, canSeek = canSeek,
                     onTap = { currentTap() },
-                    onLongPress = if (canBoost) ({ currentHold() }) else null,
-                    onPress = {
-                        try { tryAwaitRelease() } finally { currentRelease() }
-                    },
+                    onHold = { currentHold() }, onRelease = { currentRelease() },
+                    onSeekStart = { currentSeekStart(it) }, onSeekDrag = { currentSeekDrag(it) },
+                    onSeekFinish = { currentSeekFinish() }, onSeekCancel = { currentSeekCancel() },
                 )
             },
         )
