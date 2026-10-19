@@ -12,8 +12,8 @@ android {
         applicationId = "dev.davplayer.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.3.0"
+        versionCode = 9
+        versionName = "0.3.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Match transitive native libraries to the ABI(s) provided by libmpv.
         ndk { abiFilters.addAll(providers.gradleProperty("mpvAbis").orElse("arm64-v8a").get().split(',').map(String::trim)) }
@@ -25,8 +25,20 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isReturnDefaultValues = true }
+    signingConfigs {
+        providers.environmentVariable("KPLAYER_KEYSTORE").orNull?.let { keystore ->
+            create("maintainerRelease") {
+                storeFile = file(keystore)
+                storePassword = providers.environmentVariable("KPLAYER_STORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("KPLAYER_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("KPLAYER_KEY_PASSWORD").get()
+            }
+        }
+    }
     buildTypes {
         release {
+            isDebuggable = false
+            signingConfig = signingConfigs.findByName("maintainerRelease")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

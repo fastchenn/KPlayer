@@ -2,7 +2,7 @@
 
 安卓 WebDAV 视频播放器，中文深色界面，使用 libmpv 播放内核。最低 Android 8.0，发布 APK 支持 **arm64-v8a**。
 
-[下载 Android APK](https://github.com/fastchenn/KPlayer/releases/download/v0.3.0/k-player-0.3.0-arm64.apk) · [查看发布说明](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.0)
+[下载 Android APK](https://github.com/fastchenn/KPlayer/releases/download/v0.3.1/k-player-0.3.1-arm64.apk) · [查看发布说明](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.1)
 
 ## 界面预览
 
@@ -21,9 +21,9 @@
 
 ## 下载
 
-从 [0.3.0 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.0) 下载 `k-player-0.3.0-arm64.apk`。同页提供原生组件对应源码、APK 签名信息和 `SHA256SUMS.txt`。
+从 [0.3.1 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.1) 下载 `k-player-0.3.1-arm64.apk`。同页提供原生组件对应源码、APK 签名信息和 `SHA256SUMS.txt`。
 
-0.3.0 沿用本轮实测的 Debug 构建类型，使用本次 CI 临时签名，不沿用电脑上的 0.2.5 维护者证书，也不能恢复上一轮 CI 测试包私钥。若安装时提示签名冲突，先保留现有应用及数据；同包名不同签名不能直接覆盖。后续需要稳定覆盖升级时，应由维护者保管并配置固定发布证书。
+0.3.1 为关闭调试的正式 Release APK，使用本地保管的固定 K Player Release 专用证书。0.2.5 的旧签名私钥目前未找到，0.3.0 使用另一把 CI 临时密钥，因此本版不能直接覆盖这些旧签名版本。若提示签名冲突，请保留原应用和数据；卸载会清除配置、观看记录及缓存。本版没有自动迁移，后续正式版将沿用 0.3.1 的固定密钥。
 
 ## 功能
 
@@ -49,7 +49,7 @@
 
 容量为所有文件共享的上限，达到上限会淘汰最久未使用的数据。关闭缓存会保留文件；主动清除、缩小容量、清除应用数据或卸载会删除相应数据。**未下载的区域仍需联网**；忽略 Range 的源站首次跳到未缓存位置时，仍需读取前面的字节。源文件被替换后，从媒体库重新打开以获取最新版本。尚无独立离线媒体库页面。
 
-0.3.0 包含持久缓存白条修复，维护者已反馈本轮测试 APK 的实机缓存体验基本达到要求。自动化覆盖 133 项单元测试，并构建设备测试 APK；本轮未重新运行模拟器设备测试。[发布说明](docs/releases/v0.3.0.md)和[验证记录](docs/verification/v0.3.0.md)列出具体范围，0.2.5 的历史测试记录保留。
+0.3.1 保留 0.3.0 的持久缓存白条修复，本次只调整版本、正式构建及签名发布方式。Release 单元测试与 Lint 的实际结果见验证记录；本次未重新运行真机或模拟器设备测试。[发布说明](docs/releases/v0.3.1.md)和[验证记录](docs/verification/v0.3.1.md)列出具体范围，0.2.5 的历史测试记录保留。
 
 ## 构建与测试
 
@@ -61,7 +61,7 @@
 
 macOS / Linux 使用 `./gradlew`；必要时先执行 `chmod +x gradlew`。首次构建需要联网下载 Maven 依赖及经 SHA-256 校验的官方 mpv-android 原生发布包，无需 NDK。`local.properties` 可设置本机 `sdk.dir`，该文件不提交。
 
-默认 Release 构建未配置签名，可在 Android Studio 的 Generate Signed Bundle / APK 中使用自己的证书；生成文件位于 `app/build/outputs/apk/release/`。调试安装使用 `:app:assembleDebug`。
+默认 Release 构建未配置签名；可在 Android Studio 使用自己的证书，或按开发说明设置四个 KPLAYER 签名环境变量。生成文件位于 `app/build/outputs/apk/release/`。调试安装使用 `:app:assembleDebug`。
 
 固定工具版本：AGP 8.9.2、Gradle 8.11.1、Kotlin / Compose Compiler 2.1.20、Compose BOM 2025.04.01。CI 执行 Release 单元测试、Lint、Release/Debug 构建和两组设备测试 APK 构建；设备测试需另行运行。[开发与发布说明](docs/DEVELOPMENT.md)包含模拟器、分阶段缓存测试和发布步骤。
 

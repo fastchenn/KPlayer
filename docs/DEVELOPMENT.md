@@ -9,7 +9,7 @@
 | `.gradle/`、`.kotlin/`、各模块 `build/` | 本机构建缓存和中间结果，不提交 |
 | `.gradle/native-sources/` | 经哈希验证的原生源码下载缓存，可复用 |
 | `.gradle/android-sdk-test/`、`.gradle/android-avd/` | 此工作区的模拟器环境，可复用，不属于发布内容 |
-| `dist/0.3.0/` | 本机整理后的 Release 附件，不提交 Git |
+| `dist/0.3.1/` | 本机整理后的 Release 附件，不提交 Git |
 | `local.properties`、签名私钥 | 本机配置，不提交 |
 
 ## 构建验证
@@ -44,22 +44,33 @@ adb shell am instrument -w -e class "$testClass#b_reopenHistoryWithoutOpenListAf
 ## 发布附件
 
 1. 更新 `app/build.gradle.kts` 中的版本号和递增的 versionCode，整理 `docs/releases/`、`docs/verification/` 和 README。
-2. 使用维护者本地保管的证书签署 Release。源码默认不指定 Release 签名；可使用 Android Studio 的 Generate Signed Bundle / APK。维护者证书不上传 GitHub。
+2. 使用维护者本地保管的固定发布密钥签署 Release。可在 Android Studio 的 Generate Signed Bundle / APK 中选择证书，或设置下方四个环境变量。私钥和密码不进入仓库或 Release 附件。
 3. 校验 APK 版本、ABI、`apksigner verify` 和 `zipalign -c -P 16 4`，将对外 APK 复制到 `dist/<版本>/`。
 4. 更新 `SOURCES.md` 中的标签/附件名称，以及 `playback/mpv/native-sources.json` 的应用 release 字段；原生组件版本不变时保留既有 commit 和哈希。
 5. 使用 Python 3.11+ 生成对应源码附件：
 
 ```powershell
-python tools/package_native_sources.py --output dist/0.3.0/k-player-0.3.0-native-sources.zip
+python tools/package_native_sources.py --output dist/0.3.1/k-player-0.3.1-native-sources.zip
 ```
 
 6. 对 APK 和源码 ZIP 生成 `SHA256SUMS.txt`，核验 ZIP 内每个原始源码归档与清单哈希一致。
 7. 将源码提交到 GitHub，为对应提交创建版本标签和 Release，上传 APK、原生源码 ZIP 与校验文件。应用源码使用该标签自动生成的 Source code ZIP / tar.gz。
 
-历史发布说明保留，不将失败日志、旧 APK、本机 SDK、Gradle 缓存或签名配置上传到代码仓库。当前版的实际测试结果见 [0.3.0 验证记录](verification/v0.3.0.md)。
+历史发布说明保留，不将失败日志、旧 APK、本机 SDK、Gradle 缓存或签名配置上传到代码仓库。当前版的实际测试结果见 [0.3.1 验证记录](verification/v0.3.1.md)。
 
-## 0.3.0 自动发布
+## 固定 Release 签名
 
-`Android checks` 在主分支 push 或手动运行且当前版本为 0.3.0 时，在全部构建检查通过后执行一次发布任务；已有 v0.3.0 Release 时跳过，不覆盖附件。发布精确使用同次检查生成的 Debug APK，附带 APK 签名信息、校验文件和按当前清单重新整理的原生对应源码。GitHub 自动提供标签对应的应用源码归档。
+命令行签名需要同时设置以下环境变量，然后执行 `:app:assembleRelease`：
 
-本次 CI 临时证书无法替代维护者电脑上的签名；不提交、不上传签名私钥。0.3.0 不承诺覆盖此前 CI 包或 0.2.5。未来版本的自动发布需要另行明确版本及固定签名配置，不能直接沿用本次临时证书。
+| 环境变量 | 内容 |
+| --- | --- |
+| `KPLAYER_KEYSTORE` | 固定发布密钥库的绝对路径 |
+| `KPLAYER_STORE_PASSWORD` | 密钥库密码 |
+| `KPLAYER_KEY_ALIAS` | 签名密钥别名 |
+| `KPLAYER_KEY_PASSWORD` | 签名密钥密码 |
+
+未设置 `KPLAYER_KEYSTORE` 时只生成 `app-release-unsigned.apk`，不会回退到 Debug 签名。Release 显式关闭 `debuggable`，关于页通过 `BuildConfig.DEBUG` 显示正式版。
+
+0.3.1 开始使用专用的固定 K Player Release 密钥。旧 0.2.5 私钥目前未找到，0.3.0 的 CI 临时私钥也不可用；它们均无法直接覆盖升级到 0.3.1。请妥善备份新的密钥库、别名和密码，后续正式版必须沿用该密钥，不要在每次构建时重新生成。
+
+CI 运行测试、Lint 和 Release/Debug 构建，分别提供未签名 Release 与调试测试产物，不自动将 Debug APK 发布为正式版。公开 Release 附件应为经维护者固定密钥签名并校验的 Release APK。
