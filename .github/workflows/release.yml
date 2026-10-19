@@ -1,0 +1,127 @@
+name: Signed release
+run-name: "Signed release · publish=${{ inputs.publish }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a new version (off = build and verify only)'
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kplayer-signed-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      directory: ${{ steps.version.outputs.directory }}
+      artifact: ${{ steps.version.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check version and release sources
+        id: version
+        env:
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          args=()
+          if [ "$PUBLISH" = true ]; then args+=(--publish); fi
+          python tools/release.py prepare "${args[@]}" --output "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Release tooling regression checks
+        run: python -m unittest discover -s tools -p 'test_release.py' -v
+      - name: Release tests, lint and unsigned APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testReleaseUnitTest :playback:mpv:testReleaseUnitTest :app:lintRelease :app:assembleRelease --no-daemon
+      - name: Sign with fixed release certificate and verify APK
+        env:
+          KPLAYER_RELEASE_SIGNING: ${{ secrets.KPLAYER_RELEASE_SIGNING }}
+        run: python tools/release.py sign
+      - name: Reuse previously published pinned native sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/previous-native-sources"
+          if gh release download --pattern '*-native-sources.zip' --dir "$RUNNER_TEMP/previous-native-sources"; then
+            python tools/release.py restore-sources "$RUNNER_TEMP/previous-native-sources"
+          else
+            echo 'No reusable archive found; the packager will verify sources downloaded from pinned upstream URLs.'
+          fi
+      - name: Package corresponding sources and checksums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python tools/package_native_sources.py --output "dist/$VERSION/k-player-$VERSION-native-sources.zip"
+          python tools/release.py checksums
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.artifact }}
+          path: ${{ steps.version.outputs.directory }}/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Build result
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "## K Player $VERSION signed Release" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Fixed certificate matches 0.3.1; debugging disabled; tests, Lint, signature and alignment verified.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Download the signed artifact below. Publishing only runs when the publish input is enabled.' >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    if: inputs.publish && needs.build.result == 'success'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ needs.build.outputs.directory }}
+      - name: Publish a new release without replacing existing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+          TAG: ${{ needs.build.outputs.tag }}
+          DIRECTORY: ${{ needs.build.outputs.directory }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Refusing to replace its assets."
+            exit 1
+          fi
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            test "$(git rev-list -n 1 "$TAG")" = "$GITHUB_SHA"
+          fi
+          (cd "$DIRECTORY" && sha256sum --check SHA256SUMS.txt)
+          gh release create "$TAG" --target "$GITHUB_SHA" --draft \
+            --title "K Player $VERSION 正式版" --notes-file "docs/releases/$TAG.md"
+          gh release upload "$TAG" "$DIRECTORY"/*
+          gh release edit "$TAG" --draft=false --latest
+          echo "Published https://github.com/$GH_REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

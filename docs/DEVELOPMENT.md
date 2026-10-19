@@ -73,4 +73,4 @@ python tools/package_native_sources.py --output dist/0.3.1/k-player-0.3.1-native
 
 0.3.1 开始使用专用的固定 K Player Release 密钥。旧 0.2.5 私钥目前未找到，0.3.0 的 CI 临时私钥也不可用；它们均无法直接覆盖升级到 0.3.1。请妥善备份新的密钥库、别名和密码，后续正式版必须沿用该密钥，不要在每次构建时重新生成。
 
-CI 运行测试、Lint 和 Release/Debug 构建，分别提供未签名 Release 与调试测试产物，不自动将 Debug APK 发布为正式版。公开 Release 附件应为经维护者固定密钥签名并校验的 Release APK。
+`Android checks` 运行测试、Lint 和 Release/Debug 构建，分别提供未签名 Release 与调试测试产物。`Signed release` 通过 GitHub Actions 加密 Secret 使用同一固定密钥签署正式 APK，选择发布时自动创建新版本的标签与 Release。步骤见[通过 GitHub 更新和发布](GITHUB_RELEASE.md)，不需要本机源码或本机在线。

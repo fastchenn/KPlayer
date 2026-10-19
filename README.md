@@ -53,6 +53,8 @@
 
 ## 构建与测试
 
+日常更新可以完全通过 GitHub 完成，无需维护本地源码。**Actions → Signed release** 支持构建固定证书签名的正式 APK，也可选择发布新版本；操作步骤见[通过 GitHub 更新和发布](docs/GITHUB_RELEASE.md)。本机只需妥善保留签名密钥备份。
+
 需要 JDK 17、Android SDK Platform 35 和 Build Tools 35.0.0。Android Studio 打开项目根目录，或使用 Gradle Wrapper：
 
 ```powershell
