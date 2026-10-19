@@ -21,7 +21,7 @@ import java.util.Date
 
 @Composable
 fun RecentScreen(
-    state: AppState, onOpen: (WatchRecord) -> Unit, onRemove: (WatchRecord) -> Unit,
+    state: AppState, onOpen: (WatchRecord) -> Unit, onLocate: (WatchRecord) -> Unit, onRemove: (WatchRecord) -> Unit,
     onClear: () -> Unit, onReload: () -> Unit, onRetrySave: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
@@ -90,6 +90,10 @@ fun RecentScreen(
                         }
                         if (opening) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         else {
+                            IconButton(onClick = { onLocate(record) }, enabled = canOpen, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Outlined.FolderOpen, "定位文件夹", tint = if (canOpen) MintColor else MutedColor, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(4.dp))
                             Text(if (record.resumePositionMs > 0) "继续播放" else if (record.completed) "重新播放" else "播放", fontSize = 12.sp, color = if (canOpen) MintColor else MutedColor)
                             Icon(Icons.Outlined.PlayArrow, null, tint = if (canOpen) MintColor else MutedColor, modifier = Modifier.size(20.dp))
                         }
