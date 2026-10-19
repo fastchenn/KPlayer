@@ -95,7 +95,7 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
                         onDemo = { model.openServer(DemoLibrary.server) },
                         onRetry = model::reloadConnections,
                     )
-                    HomeTab.RECENT -> RecentScreen(state, model::openHistory, model::removeHistory, model::clearHistory, model::reloadHistory, model::retryHistorySave)
+                    HomeTab.RECENT -> RecentScreen(state, model::openHistory, model::locateHistoryFolder, model::removeHistory, model::clearHistory, model::reloadHistory, model::retryHistorySave)
                     HomeTab.SETTINGS -> SettingsScreen(
                         state, model::setPreferHardware, model::setRememberPosition,
                         model::setPlaybackCacheEnabled, model::setPlaybackCacheSizeGb, model::clearPlaybackCache,

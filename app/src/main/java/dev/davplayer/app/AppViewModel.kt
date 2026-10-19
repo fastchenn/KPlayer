@@ -266,6 +266,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update { it.copy(historyOpeningId = null) }
     }
 
+    fun locateHistoryFolder(record: WatchRecord) {
+        val server = state.value.servers.firstOrNull { record.matches(it) }
+        val url = server?.let(record::resolve)?.toHttpUrl()
+        if (server == null || url == null) { messages.trySend("原连接已移除或修改，无法定位文件夹"); return }
+        val parent = url.newBuilder().encodedPath(url.encodedPath.substringBeforeLast('/') + "/").build().toString()
+        cancelHistoryOpening()
+        loadDirectory(server, parent)
+    }
+
     fun openHistory(record: WatchRecord) {
         val server = state.value.servers.firstOrNull { record.matches(it) }
         val url = server?.let(record::resolve)?.toHttpUrl()
