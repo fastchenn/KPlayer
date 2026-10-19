@@ -23,7 +23,7 @@
 
 从 [0.3.1 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.1) 下载 `k-player-0.3.1-arm64.apk`。同页提供原生组件对应源码、APK 签名信息和 `SHA256SUMS.txt`。
 
-0.3.1 为关闭调试的正式 Release APK，使用本地保管的固定 K Player Release 专用证书。0.2.5 的旧签名私钥目前未找到，0.3.0 使用另一把 CI 临时密钥，因此本版不能直接覆盖这些旧签名版本。若提示签名冲突，请保留原应用和数据；卸载会清除配置、观看记录及缓存。本版没有自动迁移，后续正式版将沿用 0.3.1 的固定密钥。
+0.3.1 为关闭调试的正式 Release APK，使用固定 K Player Release 专用证书。后续发布已配置为通过 GitHub Actions 加密 Secret 使用同一密钥签名，维护者保留独立备份。0.2.5 的旧签名私钥目前未找到，0.3.0 使用另一把 CI 临时密钥，因此本版不能直接覆盖这些旧签名版本。若提示签名冲突，请保留原应用和数据；卸载会清除配置、观看记录及缓存。本版没有自动迁移，后续正式版将沿用 0.3.1 的固定密钥。
 
 ## 功能
 
@@ -33,7 +33,7 @@
 - 全屏播放，90° 横竖屏切换，底部居中的播放按钮，顶部文件名栏显示下载速度；轻触切换控制栏，播放时 4 秒无操作自动隐藏，长按画面临时 2 倍速。
 - 本机观看历史、断点续播、删除或清空记录，以及媒体库标题和说明文字编辑。
 - 视频与外挂字幕持久缓存，设置中可查看大小、开关缓存、选择容量及确认清除；默认开启，上限 5 GB，可选 2 / 5 / 10 / 20 / 50 GB。
-- 使用用户提供的启动图标，设置页直接显示设置选项；“关于”显示版本并可直接打开 GitHub 仓库。
+- 自定义启动图标，设置页直接显示设置选项；“关于”显示版本并可直接打开 GitHub 仓库。
 
 示例媒体库标注为“示例”，仅供离线界面预览，不请求服务器，也没有可播放视频。切后台暂停，前台播放保持亮屏。
 
@@ -55,6 +55,10 @@
 
 日常更新可以完全通过 GitHub 完成，无需维护本地源码。**Actions → Signed release** 支持构建固定证书签名的正式 APK，也可选择发布新版本；操作步骤见[通过 GitHub 更新和发布](docs/GITHUB_RELEASE.md)。本机只需妥善保留签名密钥备份。
 
+[云端签名构建已验证通过](https://github.com/fastchenn/KPlayer/actions/runs/39194464509)：133 项应用和播放器 Release 单元测试、10 项发布工具检查，以及签名、关闭调试、ARM64、16 KB 对齐与附件校验均通过。本次仅验证构建，没有替换 0.3.1 的发布附件。
+
+### 可选：本地构建
+
 需要 JDK 17、Android SDK Platform 35 和 Build Tools 35.0.0。Android Studio 打开项目根目录，或使用 Gradle Wrapper：
 
 ```powershell
@@ -63,7 +67,7 @@
 
 macOS / Linux 使用 `./gradlew`；必要时先执行 `chmod +x gradlew`。首次构建需要联网下载 Maven 依赖及经 SHA-256 校验的官方 mpv-android 原生发布包，无需 NDK。`local.properties` 可设置本机 `sdk.dir`，该文件不提交。
 
-默认 Release 构建未配置签名；可在 Android Studio 使用自己的证书，或按开发说明设置四个 KPLAYER 签名环境变量。生成文件位于 `app/build/outputs/apk/release/`。调试安装使用 `:app:assembleDebug`。
+本地默认 Release 构建未配置签名；可在 Android Studio 使用自己的证书，或按开发说明设置四个 KPLAYER 签名环境变量。生成文件位于 `app/build/outputs/apk/release/`。调试安装使用 `:app:assembleDebug`。
 
 固定工具版本：AGP 8.9.2、Gradle 8.11.1、Kotlin / Compose Compiler 2.1.20、Compose BOM 2025.04.01。CI 执行 Release 单元测试、Lint、Release/Debug 构建和两组设备测试 APK 构建；设备测试需另行运行。[开发与发布说明](docs/DEVELOPMENT.md)包含模拟器、分阶段缓存测试和发布步骤。
 

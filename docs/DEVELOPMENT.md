@@ -1,6 +1,14 @@
 # 开发、测试与发布
 
-## 本机文件
+## 日常维护：GitHub
+
+源码维护、测试、签名和发布均可在 GitHub 完成，本机源码无需日常同步，也不需要电脑在线。操作步骤见[通过 GitHub 更新和发布](GITHUB_RELEASE.md)。`Signed release` 已使用 0.3.1 的固定证书完成[云端构建验证](https://github.com/fastchenn/KPlayer/actions/runs/39194464509)，发布工具检查、Release 测试和最终 APK 校验均通过。
+
+发布新版本时，先在 `main` 提交版本、源码清单与发布说明，再运行 `Signed release` 并勾选发布。只下载签名正式包时，不勾选发布。维护者需要独立备份密钥库、密码和别名。
+
+下面的本机环境和命令仅供需要本地开发、设备调试或手动打包时使用。
+
+## 可选本机文件
 
 仓库保存源码、资源、固定依赖清单、构建脚本、测试与文档。
 
@@ -12,7 +20,7 @@
 | `dist/0.3.1/` | 本机整理后的 Release 附件，不提交 Git |
 | `local.properties`、签名私钥 | 本机配置，不提交 |
 
-## 构建验证
+## 可选本机构建验证
 
 安装 JDK 17、Android SDK 35 和 Build Tools 35.0.0 后运行：
 
@@ -41,10 +49,10 @@ adb shell am instrument -w -e class "$testClass#b_reopenHistoryWithoutOpenListAf
 
 `PlayerLayoutTest` 检查界面和缓存设置；mpv 模块的 Android 测试检查真实解码、GPU 画面、字幕、控制与持久缓存。测试样本在本机生成，不需要真实 NAS 凭据。
 
-## 发布附件
+## 可选本机打包和发布附件
 
 1. 更新 `app/build.gradle.kts` 中的版本号和递增的 versionCode，整理 `docs/releases/`、`docs/verification/` 和 README。
-2. 使用维护者本地保管的固定发布密钥签署 Release。可在 Android Studio 的 Generate Signed Bundle / APK 中选择证书，或设置下方四个环境变量。私钥和密码不进入仓库或 Release 附件。
+2. 使用维护者备份的固定发布密钥签署 Release。可在 Android Studio 的 Generate Signed Bundle / APK 中选择证书，或设置下方四个环境变量。私钥和密码不进入 Git 源码或公开 Release 附件。
 3. 校验 APK 版本、ABI、`apksigner verify` 和 `zipalign -c -P 16 4`，将对外 APK 复制到 `dist/<版本>/`。
 4. 更新 `SOURCES.md` 中的标签/附件名称，以及 `playback/mpv/native-sources.json` 的应用 release 字段；原生组件版本不变时保留既有 commit 和哈希。
 5. 使用 Python 3.11+ 生成对应源码附件：
@@ -58,7 +66,7 @@ python tools/package_native_sources.py --output dist/0.3.1/k-player-0.3.1-native
 
 历史发布说明保留，不将失败日志、旧 APK、本机 SDK、Gradle 缓存或签名配置上传到代码仓库。当前版的实际测试结果见 [0.3.1 验证记录](verification/v0.3.1.md)。
 
-## 固定 Release 签名
+## 本机固定 Release 签名
 
 命令行签名需要同时设置以下环境变量，然后执行 `:app:assembleRelease`：
 
