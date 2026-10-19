@@ -4,9 +4,9 @@ GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上�
 
 ## 云端验证结果
 
-2026-10-19（Asia/Shanghai）已完成[Signed release 云端构建验证](https://github.com/fastchenn/KPlayer/actions/runs/39194464509)。133 项应用及播放器 Release 单元测试、10 项发布工具回归检查通过，Lint 无错误，正式 APK 签名和 16 KB 对齐检查通过。下载云端产物后，另行核对了附件 SHA-256、关闭调试、ARM64 架构以及与 0.3.1 一致的证书指纹。
+2026-10-20（Asia/Shanghai）已完成 [0.3.3 Signed release 云端签名构建](https://github.com/fastchenn/KPlayer/actions/runs/39286933498)。应用 67 项和播放器 74 项 Release 单元测试（合计 141 项）及 10 项发布工具检查通过；Lint 无错误、8 项警告。正式 APK 的原包名、0.3.3 / 11 版本、关闭调试、固定证书、ARM64、v2/v3 签名和 16 KB 对齐均通过检查。
 
-该次运行的发布选项关闭，未创建新版本，也未替换现有 0.3.1 Release。自动发布步骤已配置，供后续递增版本时运行。
+本次开启发布 0.3.3，发布状态与附件见 [0.3.3 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.3)。历史 Release 不替换。准确检查结果由同页 `RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt` 记录。
 
 ## 修改代码
 
