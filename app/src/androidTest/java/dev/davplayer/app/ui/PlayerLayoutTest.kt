@@ -3,8 +3,12 @@ package dev.davplayer.app.ui
 import android.content.Intent
 import android.graphics.Rect
 import android.view.Surface
+import android.view.MotionEvent
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.davplayer.app.MainActivity
 import dev.davplayer.app.VideoTarget
@@ -19,6 +23,69 @@ import kotlin.math.abs
 
 /** Tests actual Compose accessibility bounds after fullscreen orientation changes. */
 class PlayerLayoutTest {
+    @Test fun fullscreenSwipePreviewsOnceAndCannotTurnIntoDoubleSpeed() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        val engine = TestEngine(PlaybackPhase.PLAYING)
+        val target = VideoTarget(ServerConnection.create("NAS", "http://127.0.0.1/dav/", "", ""),
+            MediaEntry("http://127.0.0.1/dav/video.mkv", "手势验证.mkv", false))
+        var downTime = 0L
+        var x = 0f
+        var y = 0f
+        fun touch(action: Int, nextX: Float = x) {
+            x = nextX
+            val now = SystemClock.uptimeMillis()
+            if (action == MotionEvent.ACTION_DOWN) downTime = now
+            val event = MotionEvent.obtain(downTime, now, action, x, y, 0)
+            try { assertTrue(instrumentation.uiAutomation.injectInputEvent(event, true)) }
+            finally { event.recycle() }
+            instrumentation.waitForIdleSync()
+        }
+        try {
+            instrumentation.runOnMainSync { activity.setContent { DavTheme {
+                val playback by engine.state.collectAsState()
+                PlayerScreen(target, engine, playback, {})
+            } } }
+            click(node("全屏播放"))
+            await("Fullscreen landscape missing") { activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
+            var width = 0f
+            instrumentation.runOnMainSync { width = activity.window.decorView.width.toFloat(); y = activity.window.decorView.height / 2f }
+
+            touch(MotionEvent.ACTION_DOWN, width / 2)
+            Thread.sleep(700)
+            val holdHint = bounds(node("2X"))
+            assertEquals(2f, engine.state.value.speed)
+            touch(MotionEvent.ACTION_MOVE, width * .75f)
+            assertTrue(engine.seeks.isEmpty())
+            assertEquals(2f, engine.state.value.speed)
+            touch(MotionEvent.ACTION_UP)
+            assertEquals(1f, engine.state.value.speed)
+
+            touch(MotionEvent.ACTION_DOWN, width / 2)
+            touch(MotionEvent.ACTION_MOVE, width * .75f)
+            val seekHint = bounds(node("00:01:00/00:02:00"))
+            assertEquals(holdHint.centerX(), seekHint.centerX())
+            assertEquals(holdHint.top, seekHint.top)
+            Thread.sleep(700)
+            assertEquals(1f, engine.state.value.speed)
+            assertTrue(engine.seeks.isEmpty())
+            touch(MotionEvent.ACTION_UP)
+            assertEquals(listOf(60_000L), engine.seeks)
+
+            // Cancellation must discard the preview and restore the hint/controls.
+            touch(MotionEvent.ACTION_DOWN, width / 2)
+            touch(MotionEvent.ACTION_MOVE, width * .25f)
+            node("00:00:00/00:02:00")
+            touch(MotionEvent.ACTION_CANCEL)
+            assertEquals(listOf(60_000L), engine.seeks)
+            node("手势验证.mkv")
+        } finally {
+            touch(MotionEvent.ACTION_CANCEL)
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
     @Test fun settingsShowsRealCacheSizeAndRequiresConfirmationToClear() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
@@ -150,11 +217,11 @@ class PlayerLayoutTest {
         while (System.nanoTime() < end) { if (condition()) return; Thread.sleep(50) }
         fail(message)
     }
-    private class TestEngine : PlayerEngine {
+    private class TestEngine(phase: PlaybackPhase = PlaybackPhase.PAUSED) : PlayerEngine {
         override val id = EngineId.MPV
         override val availability = EngineAvailability.Available
         override val capabilities = PlayerCapabilities(seek = true, speed = true)
-        override val state = MutableStateFlow(PlaybackState(phase = PlaybackPhase.PAUSED, seekable = true,
+        override val state = MutableStateFlow(PlaybackState(phase = phase, seekable = true,
             positionMs = 30_000, durationMs = 120_000, networkBytesPerSecond = 1_048_576, bufferedUntilMs = 60_000))
         override fun attachSurface(surface: Surface?) {}
         override fun setSurfaceSize(width: Int, height: Int) {}
@@ -162,8 +229,9 @@ class PlayerLayoutTest {
         override fun play() {}
         override fun pause() {}
         override fun stop() {}
-        override fun seekTo(positionMs: Long) {}
-        override fun setSpeed(speed: Float) {}
+        val seeks = mutableListOf<Long>()
+        override fun seekTo(positionMs: Long) { seeks += positionMs }
+        override fun setSpeed(speed: Float) { state.value = state.value.copy(speed = speed) }
         override fun selectTrack(type: TrackType, trackId: String?) {}
         override fun release() {}
     }
