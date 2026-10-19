@@ -6,18 +6,11 @@
 
 ## 界面预览
 
-实际 Android 界面截图，点击图片可查看原图。
-
 <p align="center">
-  <a href="docs/screenshots/player-portrait.jpg"><img src="docs/screenshots/player-portrait.jpg" alt="竖屏播放与分段缓存白条" height="360"></a>
-  <a href="docs/screenshots/history.jpg"><img src="docs/screenshots/history.jpg" alt="观看历史与断点续播" height="360"></a>
+  <img src="https://cdn.nodeimage.com/i/iowAeQEaoIBdpuDjvIczvEhCWXUhXiQC.webp" width="48%" />
+  <img src="https://cdn.nodeimage.com/i/g9ZGXy19mdT4AbEgHY7KX2TDNbszyze2.webp" width="48%" />
 </p>
-<p align="center"><sub>竖屏播放 · 观看记录</sub></p>
-
-<p align="center">
-  <a href="docs/screenshots/player-landscape.jpg"><img src="docs/screenshots/player-landscape.jpg" alt="横屏全屏播放与分段缓存白条" width="900"></a>
-</p>
-<p align="center"><sub>横屏播放：进度条显示多个不连续的缓存区间</sub></p>
+<img src="https://cdn.nodeimage.com/i/yG8Oz5wvp3TaP6PUY0fyE6p0WF07j98I.webp" alt="yG8Oz5wvp3TaP6PUY0fyE6p0WF07j98I">
 
 ## 下载
 
