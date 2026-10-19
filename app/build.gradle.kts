@@ -12,8 +12,8 @@ android {
         applicationId = "dev.davplayer.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.3.2"
+        versionCode = 11
+        versionName = "0.3.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Match transitive native libraries to the ABI(s) provided by libmpv.
         ndk { abiFilters.addAll(providers.gradleProperty("mpvAbis").orElse("arm64-v8a").get().split(',').map(String::trim)) }
@@ -36,11 +36,6 @@ android {
         }
     }
     buildTypes {
-        debug {
-            applicationIdSuffix = ".preview"
-            versionNameSuffix = "-gesture-test"
-            resValue("string", "app_name", "K Player 测试版")
-        }
         release {
             isDebuggable = false
             signingConfig = signingConfigs.findByName("maintainerRelease")

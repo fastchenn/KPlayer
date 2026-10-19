@@ -2,7 +2,7 @@
 
 安卓 WebDAV 视频播放器，中文深色界面，使用 libmpv 播放内核。最低 Android 8.0，发布 APK 支持 **arm64-v8a**。
 
-[下载 Android APK](https://github.com/fastchenn/KPlayer/releases/download/v0.3.2/k-player-0.3.2-arm64.apk) · [查看发布说明](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.2)
+[下载 Android APK](https://github.com/fastchenn/KPlayer/releases/download/v0.3.3/k-player-0.3.3-arm64.apk) · [查看发布说明](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.3)
 
 ## 界面预览
 
@@ -14,9 +14,9 @@
 
 ## 下载
 
-从 [0.3.2 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.2) 下载 `k-player-0.3.2-arm64.apk`。同页提供原生组件对应源码、APK 签名信息和 `SHA256SUMS.txt`。
+从 [0.3.3 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.3) 下载 `k-player-0.3.3-arm64.apk`。同页提供原生组件对应源码、APK 签名信息和 `SHA256SUMS.txt`。
 
-0.3.2 为关闭调试的正式 Release APK，沿用 0.3.1 的固定 K Player Release 专用证书，可覆盖升级 0.3.1 并保留应用数据。后续发布已配置为通过 GitHub Actions 加密 Secret 使用同一密钥签名，维护者保留独立备份。0.2.5 的旧签名私钥目前未找到，0.3.0 使用另一把 CI 临时密钥，因此本版不能直接覆盖这些旧签名版本。若提示签名冲突，请保留原应用和数据；卸载会清除配置、观看记录及缓存。本版没有自动迁移，后续正式版将沿用 0.3.1 的固定密钥。
+0.3.3 为关闭调试的正式 Release APK，沿用 0.3.1 的固定 K Player Release 专用证书，可覆盖升级 0.3.1 / 0.3.2 并保留应用数据。后续发布已配置为通过 GitHub Actions 加密 Secret 使用同一密钥签名，维护者保留独立备份。0.2.5 的旧签名私钥目前未找到，0.3.0 使用另一把 CI 临时密钥，因此本版不能直接覆盖这些旧签名版本。若提示签名冲突，请保留原应用和数据；卸载会清除配置、观看记录及缓存。本版没有自动迁移，后续正式版将沿用 0.3.1 的固定密钥。
 
 ## 功能
 
@@ -42,7 +42,7 @@
 
 容量为所有文件共享的上限，达到上限会淘汰最久未使用的数据。关闭缓存会保留文件；主动清除、缩小容量、清除应用数据或卸载会删除相应数据。**未下载的区域仍需联网**；忽略 Range 的源站首次跳到未缓存位置时，仍需读取前面的字节。源文件被替换后，从媒体库重新打开以获取最新版本。尚无独立离线媒体库页面。
 
-0.3.2 在观看历史新增“定位文件夹”，直接浏览视频所在的 WebDAV 目录；点击卡片仍继续播放。定位目录需要联网，原连接失效时按钮禁用。本次未修改播放和缓存逻辑，也未运行真机或模拟器设备测试。[发布说明](docs/releases/v0.3.2.md)和[验证记录](docs/verification/v0.3.2.md)列出检查结果与范围，旧版验证记录保留。
+0.3.3 简化全屏长按倍速提示为无底框的 `2X`，新增全屏左右滑动定位，并在同一位置显示目标时间和总时长，松手后跳转。手势互斥，退出全屏或切后台会取消当前手势。本版沿用原应用包名和固定发布证书，可直接覆盖升级 0.3.1 / 0.3.2。本轮未运行真机或模拟器设备回归测试。[发布说明](docs/releases/v0.3.3.md)和[验证记录](docs/verification/v0.3.3.md)列出检查结果与范围，旧版验证记录保留。
 
 ## 构建与测试
 
