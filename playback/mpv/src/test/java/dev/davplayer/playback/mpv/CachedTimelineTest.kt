@@ -91,4 +91,19 @@ class CachedTimelineTest {
         cache.clear()
         assertTrue(directory.listFiles()!!.isEmpty())
     }
+
+    @Test fun indexGrowthAndPlayedCoverageFillFrozenRangesAndPersistAcrossReopen() {
+        val directory = temporary.newFolder()
+        val cache = PlaybackDiskCache(directory)
+        cache.put(key, 0, ByteArray(16), cache.generation())
+        val initial = listOf(CachedTimeRange(0, 2000))
+        cache.timeline(key, initial, listOf(CachedByteRange(0, 8)), cache.generation())
+        val indexed = listOf(CachedTimeProof(CachedTimeRange(2000, 5000), listOf(CachedByteRange(0, 16))))
+        assertEquals(listOf(CachedTimeRange(0, 6000)), cache.timeline(key,
+            listOf(CachedTimeRange(5000, 6000)), listOf(CachedByteRange(0, 16)), cache.generation(), indexed))
+        val reopened = PlaybackDiskCache(directory)
+        assertEquals(listOf(CachedTimeRange(0, 6000)), reopened.timeline(key, emptyList(), emptyList(), reopened.generation()))
+        File(directory, "$key.0.blk").writeBytes(ByteArray(8))
+        assertEquals(initial, reopened.timeline(key, emptyList(), emptyList(), reopened.generation()))
+    }
 }

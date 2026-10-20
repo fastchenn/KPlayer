@@ -5,6 +5,7 @@ import java.io.IOException
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
@@ -86,12 +87,13 @@ class PlaybackDiskCache(
         })
     }
 
-    internal fun timeline(key: String, observed: List<CachedTimeRange>, dependencies: List<CachedByteRange>, generation: Long): List<CachedTimeRange> = synchronized(lock) {
+    internal fun timeline(key: String, observed: List<CachedTimeRange>, dependencies: List<CachedByteRange>, generation: Long, indexed: List<CachedTimeProof> = emptyList()): List<CachedTimeRange> = synchronized(lock) {
         if (!enabled || !key.matches(Regex("[a-f0-9]{64}"))) return emptyList()
         initialize()
         timelines.getOrPut(key) { CachedTimeline(File(directory, "$key.ranges")) }
             .update(if (generation == epoch) observed else emptyList(),
-                if (generation == epoch) dependencies else emptyList(), byteRanges(key))
+                if (generation == epoch) dependencies else emptyList(), byteRanges(key),
+                if (generation == epoch) indexed else emptyList())
     }
 
     /** Only actual bytes count as a cache hit. A metadata-only entry is insufficient. */
@@ -144,6 +146,36 @@ class PlaybackDiskCache(
             Files.move(temporary.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } catch (_: IOException) { issue.value = "无法写入播放缓存，请检查设备剩余存储空间" }
         finally { temporary?.delete() }
+    }
+
+    /** Keep the active file's small headers/index usable while evicting old media payload. */
+    internal fun retainMetadata(key: String, ranges: List<CachedByteRange>) = synchronized(lock) {
+        if (!enabled) return
+        for (range in ranges) for (block in range.start / BLOCK_BYTES..(range.end - 1) / BLOCK_BYTES) {
+            entries[blockName(key, block)]?.file?.setLastModified(System.currentTimeMillis())
+        }
+    }
+
+    /** Metadata inspection never fetches missing bytes or changes LRU recency. */
+    internal fun readRange(key: String, position: Long, count: Int): ByteArray? = synchronized(lock) {
+        if (!enabled || position < 0 || count !in 1..16_777_216 || position > Long.MAX_VALUE - count) return null
+        initialize()
+        val result = ByteArray(count)
+        var written = 0
+        try {
+            while (written < count) {
+                val offset = position + written
+                val name = blockName(key, offset / BLOCK_BYTES)
+                val file = File(directory, name)
+                if (!file.isFile) return null
+                val inBlock = (offset % BLOCK_BYTES).toInt()
+                val amount = minOf(count - written, BLOCK_BYTES - inBlock)
+                if (file.length() < inBlock + amount) return null
+                RandomAccessFile(file, "r").use { input -> input.seek(inBlock.toLong()); input.readFully(result, written, amount) }
+                written += amount
+            }
+            result
+        } catch (_: IOException) { null }
     }
 
     internal fun prefixLength(key: String, block: Long, expectedBytes: Int): Int = synchronized(lock) {

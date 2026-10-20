@@ -70,17 +70,55 @@ internal class CachedMediaReader(
     private var delivered = emptyList<CachedByteRange>()
     @Volatile private var timelineEligible = true
 
-    /** Called after observing mpv, so dependencies include all bytes it could have consumed. */
-    fun cachedTimeline(observed: List<CachedTimeRange>, durationMs: Long?): List<CachedTimeRange> {
-        val media = metadata?.media ?: return emptyList()
+    @Volatile private var playbackEpoch = 0L
+    private val playedCoverage = PlayedTimeCoverage()
+    private var containerIndex: MatroskaCacheIndex? = null
+    private var containerIndexKey: String? = null
+
+    /** Capture with the native sample, before an IO worker or a seek can change its meaning. */
+    fun timelineSnapshot(): CacheReadSnapshot = synchronized(deliveredLock) {
+        CacheReadSnapshot(seekEpoch, playbackEpoch, delivered, timelineEligible)
+    }
+
+    fun nativeSeek() { playbackEpoch++ }
+
+    fun cachedTimeline(
+        observed: List<CachedTimeRange>, durationMs: Long?,
+        snapshot: CacheReadSnapshot = timelineSnapshot(), sample: PlaybackTimelineSample? = null,
+    ): List<CachedTimeRange> {
+        val meta = metadata ?: return emptyList()
+        val media = meta.media
+        // Read dependencies before inspecting disk. The opposite order lost observations
+        // whenever downloading/serving advanced during the disk snapshot.
         val available = cache.byteRanges(media.key)
         if (durationMs != null && durationMs > 0 && available.any { it.start == 0L && it.end >= media.size }) {
             return cache.timeline(media.key, listOf(CachedTimeRange(0, durationMs)),
                 listOf(CachedByteRange(0, media.size)), generation)
         }
-        val dependencies = synchronized(deliveredLock) { delivered }
-        return cache.timeline(media.key, if (timelineEligible) observed else emptyList(),
-            if (timelineEligible) dependencies else emptyList(), generation)
+        val current = snapshot.seekEpoch == seekEpoch
+        val played = playedCoverage.observe(snapshot.playbackEpoch, sample.takeIf { current && snapshot.eligible })
+        if (containerIndexKey != media.key) {
+            containerIndexKey = media.key
+            containerIndex = if (request.title.substringAfterLast('.').lowercase() in setOf("mkv", "webm"))
+                MatroskaCacheIndex(media.size, { position, count -> cache.readRange(media.key, position, count) },
+                    { position, count -> requestIndexBytes(meta, position, count) }) else null
+        }
+        val indexed = containerIndex?.proofs(available, durationMs, sample?.originMs ?: 0).orEmpty()
+        containerIndex?.let { cache.retainMetadata(media.key, it.metadataRanges()) }
+        return cache.timeline(media.key, if (current && snapshot.eligible) observed + played else emptyList(),
+            if (current && snapshot.eligible) snapshot.bytes else emptyList(), generation, indexed)
+    }
+
+    private fun requestIndexBytes(meta: Metadata, position: Long, count: Int) {
+        if (stopped() || !cache.enabled || cache.generation() != generation) return
+        val first = position / PlaybackDiskCache.BLOCK_BYTES
+        val last = (position + count - 1) / PlaybackDiskCache.BLOCK_BYTES
+        for (index in first..last) {
+            val length = minOf(PlaybackDiskCache.BLOCK_BYTES.toLong(), meta.media.size - index * PlaybackDiskCache.BLOCK_BYTES).toInt()
+            if (cache.prefixLength(meta.media.key, index, length) >= length) continue
+            val prefix = cache.readPrefix(meta.media.key, index, length) ?: ByteArray(0)
+            download(meta, index, length, prefix)
+        }
     }
 
     fun downloadProgress(): CacheDownloadProgress? {
@@ -100,6 +138,7 @@ internal class CachedMediaReader(
     fun prepareSeek() {
         synchronized(readAheadLock) {
             seekEpoch++
+            playbackEpoch++
             readAhead?.let { it.scope.cancel(); finishAhead(it) }
             for ((index, block) in downloads) {
                 block.scope.cancel()

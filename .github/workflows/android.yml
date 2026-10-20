@@ -32,17 +32,18 @@ jobs:
           name: k-player-release-unsigned
           path: app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Verify metadata and sign installable APK
+        id: signed
         if: github.event_name == 'push' && github.ref == 'refs/heads/fix/continuous-cache'
         env:
           KPLAYER_RELEASE_SIGNING: ${{ secrets.KPLAYER_RELEASE_SIGNING }}
         run: |
-          python tools/release.py prepare
+          python tools/release.py prepare --output "$GITHUB_OUTPUT"
           python tools/release.py sign
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/fix/continuous-cache'
         with:
-          name: k-player-0.3.4-signed
-          path: dist/0.3.4/*
+          name: ${{ steps.signed.outputs.artifact }}
+          path: ${{ steps.signed.outputs.directory }}/*
           if-no-files-found: error
           retention-days: 14
       - name: Debug APK and device test APKs

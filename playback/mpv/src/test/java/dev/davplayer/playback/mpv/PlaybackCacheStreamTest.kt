@@ -681,4 +681,22 @@ class PlaybackCacheStreamTest {
             assertTrue("Resume must keep the downloaded prefix", resumed > 0)
         }
     }
+
+    @Test fun aQueuedTimelineSampleFromBeforeSeekCannotPaintTheNewPosition() {
+        val block = PlaybackDiskCache.BLOCK_BYTES
+        content = ByteArray(block * 3) { (it % 251).toByte() }
+        val cache = PlaybackDiskCache(temporary.newFolder())
+        source(cache, request(knownSize = true)).use { endpoint ->
+            read(endpoint, "bytes=0-3")
+            awaitCache(cache, block.toLong())
+            val old = endpoint.timelineSnapshot()!!
+            endpoint.prepareSeek()
+            assertTrue(endpoint.cachedTimeline(listOf(CachedTimeRange(0, 2000)), 60000, old).isEmpty())
+            val tail = block * 2
+            read(endpoint, "bytes=$tail-${tail + 3}")
+            awaitCache(cache, block * 2L)
+            val range = listOf(CachedTimeRange(40000, 42000))
+            assertEquals(range, endpoint.cachedTimeline(range, 60000, endpoint.timelineSnapshot()))
+        }
+    }
 }

@@ -13,6 +13,7 @@ internal class NativeMpvClient(
     private val onEvent: (Int) -> Unit,
 ) : MPVLib.EventObserver {
     private var created = false
+    private var seekCacheDisabled = false
 
     fun initialize(hardware: Boolean, paused: Boolean, speed: Float, cacheEnabled: Boolean = true) {
         check(owner == null) { "A libmpv session is already active" }
@@ -68,10 +69,24 @@ internal class NativeMpvClient(
     fun seek(positionMs: Long) {
         // Force a real byte seek even when the target is in mpv's RAM cache. The disk
         // cache serves existing bytes locally; the next HTTP request anchors read-ahead.
+        seekCacheDisabled = true
         MPVLib.setPropertyString("demuxer-seekable-cache", "no")
         MPVLib.command(arrayOf("seek", (positionMs / 1000.0).toString(), "absolute+exact"))
     }
-    fun playbackRestarted() { MPVLib.setPropertyString("demuxer-seekable-cache", "auto") }
+    fun playbackRestarted() {
+        if (seekCacheDisabled) {
+            MPVLib.setPropertyString("demuxer-seekable-cache", "auto")
+            seekCacheDisabled = false
+        }
+    }
+    fun timelineSample(playing: Boolean, speed: Float): PlaybackTimelineSample {
+        val seeking = MPVLib.getPropertyBoolean("seeking") == true
+        // Paused/no-op seeks must not leave cache range reporting disabled indefinitely.
+        if (seekCacheDisabled && !seeking) playbackRestarted()
+        val position = MPVLib.getPropertyDouble("time-pos")?.let(MpvPlaybackState::secondsToMillis)
+        val origin = MPVLib.getPropertyDouble("demuxer-start-time")?.takeIf { it.isFinite() }?.let { (it * 1000).toLong() } ?: 0
+        return PlaybackTimelineSample(position, playing && !seeking, speed, origin)
+    }
     fun speed(speed: Float) { MPVLib.setPropertyDouble("speed", speed.toDouble()) }
     fun volume(percent: Double) { MPVLib.setPropertyDouble("volume", percent) }
     fun eof() = MPVLib.getPropertyBoolean("eof-reached") == true

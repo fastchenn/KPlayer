@@ -58,20 +58,18 @@ internal fun parseSeekableRanges(json: String?): List<CachedTimeRange> {
  * Access is serialized by PlaybackDiskCache's lock; no filesystem work belongs on main.
  */
 internal class CachedTimeline(private val file: File) {
-    private data class Proof(val time: CachedTimeRange, val bytes: List<CachedByteRange>)
     private var proofs = read()
 
-    fun update(observed: List<CachedTimeRange>, dependencies: List<CachedByteRange>, available: List<CachedByteRange>): List<CachedTimeRange> {
+    fun update(observed: List<CachedTimeRange>, dependencies: List<CachedByteRange>, available: List<CachedByteRange>, indexed: List<CachedTimeProof> = emptyList()): List<CachedTimeRange> {
         val valid = proofs.filter { covered(it.bytes, available) }.toMutableList()
         val required = mergeByteRanges(dependencies)
-        if (required.isNotEmpty() && required.size <= MAX_DEPENDENCIES && covered(required, available)) {
-            for (time in mergeTimeRanges(observed)) {
-                // Preserve earlier/smaller proofs. Growing a range must not make its old part
-                // depend on all later downloads; that would erase it unnecessarily on eviction.
-                var remaining = listOf(time)
-                for (existing in valid) remaining = remaining.flatMap { subtract(it, existing.time) }
-                for (part in remaining) valid.add(Proof(part, required))
-            }
+        val observations = indexed + if (required.isNotEmpty()) mergeTimeRanges(observed).map { CachedTimeProof(it, required) } else emptyList()
+        for (observation in observations) {
+            if (observation.bytes.isEmpty() || observation.bytes.size > MAX_DEPENDENCIES || !covered(observation.bytes, available)) continue
+            // Keep an earlier, smaller proof when a downloaded interval grows.
+            var remaining = listOf(observation.time)
+            for (existing in valid) remaining = remaining.flatMap { subtract(it, existing.time) }
+            for (part in remaining) valid.add(CachedTimeProof(part, observation.bytes))
         }
         // Bound metadata for long videos by coalescing adjacent proofs conservatively.
         valid.sortBy { it.time.startMs }
@@ -81,14 +79,14 @@ internal class CachedTimeline(private val file: File) {
             val a = valid[index]; val b = valid[index + 1]
             val bytes = mergeByteRanges(a.bytes + b.bytes)
             if (bytes.size > MAX_DEPENDENCIES) { valid.removeAt(index); continue }
-            valid[index] = Proof(CachedTimeRange(a.time.startMs, b.time.endMs), bytes)
+            valid[index] = CachedTimeProof(CachedTimeRange(a.time.startMs, b.time.endMs), bytes)
             valid.removeAt(index + 1)
         }
         if (valid != proofs) { proofs = valid; write() }
         return mergeTimeRanges(valid.map { it.time })
     }
 
-    private fun read(): List<Proof> {
+    private fun read(): List<CachedTimeProof> {
         if (!file.isFile || file.length() > MAX_FILE_BYTES) return emptyList()
         return try {
             DataInputStream(file.inputStream().buffered()).use { input ->
@@ -99,7 +97,7 @@ internal class CachedTimeline(private val file: File) {
                     val time = CachedTimeRange(input.readLong(), input.readLong())
                     val dependencies = input.readInt()
                     if (dependencies !in 1..MAX_DEPENDENCIES) return emptyList()
-                    Proof(time, List(dependencies) { CachedByteRange(input.readLong(), input.readLong()) })
+                    CachedTimeProof(time, List(dependencies) { CachedByteRange(input.readLong(), input.readLong()) })
                 }
             }
         } catch (_: IOException) { emptyList() }

@@ -116,6 +116,7 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
                                     loadExternalSubtitles(current)
                                     refreshTracks()
                                 }
+                                MPVLib.MpvEvent.MPV_EVENT_SEEK -> source?.nativeSeek()
                                 MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> client?.playbackRestarted()
                                 MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
                                     reducer.endFile(client!!.eof(), networkError)
@@ -272,12 +273,14 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
         // Read native state while the main-thread-owned client is alive. Parse and do all
         // disk/index operations on the worker; late results from an old session are ignored.
         val json = native.seekableRangesJson()
+        val sample = native.timelineSample(state.value.phase == PlaybackPhase.PLAYING, state.value.speed)
+        val snapshot = currentSource.timelineSnapshot()
         val duration = state.value.durationMs
         val session = generation
         try {
             timelineWorker.execute {
                 try {
-                    val ranges = currentSource.cachedTimeline(parseSeekableRanges(json), duration)
+                    val ranges = currentSource.cachedTimeline(parseSeekableRanges(json), duration, snapshot, sample)
                     val progress = currentSource.downloadProgress()
                     if (!finalSnapshot) main.post {
                         if (!released && generation == session && source === currentSource) {

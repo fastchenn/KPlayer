@@ -12,8 +12,8 @@ android {
         applicationId = "dev.davplayer.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.3.4"
+        versionCode = 13
+        versionName = "0.3.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Match transitive native libraries to the ABI(s) provided by libmpv.
         ndk { abiFilters.addAll(providers.gradleProperty("mpvAbis").orElse("arm64-v8a").get().split(',').map(String::trim)) }
