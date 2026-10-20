@@ -146,6 +146,15 @@ class PlaybackDiskCache(
         finally { temporary?.delete() }
     }
 
+    internal fun prefixLength(key: String, block: Long, expectedBytes: Int): Int = synchronized(lock) {
+        if (!enabled) return 0
+        initialize()
+        val name = blockName(key, block)
+        val length = entries[name]?.file?.length() ?: return 0
+        if (length !in 1..expectedBytes.toLong()) { remove(name); return 0 }
+        length.toInt()
+    }
+
     /** A block may contain a durable prefix; it is useful even before the whole block arrives. */
     internal fun readPrefix(key: String, block: Long, expectedBytes: Int): ByteArray? = synchronized(lock) {
         if (!enabled) return null
@@ -252,6 +261,7 @@ class PlaybackDiskCache(
     }
 
     private fun trimTo(limit: Long) {
+        if (usage.value <= limit) return
         for (name in entries.keys.toList()) {
             if (usage.value <= limit) break
             remove(name)

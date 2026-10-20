@@ -45,6 +45,8 @@ internal class MpvPlaybackState {
     fun networkSpeed(bytesPerSecond: Long) { value = value.copy(networkBytesPerSecond = bytesPerSecond.coerceAtLeast(0)) }
     fun cachedRanges(ranges: List<CachedTimeRange>) { value = value.copy(cachedRanges = ranges) }
 
+    fun cacheProgress(progress: CacheDownloadProgress?) { value = value.copy(cacheProgress = progress) }
+
     fun endFile(eof: Boolean, errorMessage: String? = null) {
         if (eof || ended) { ended = true; refreshPhase() }
         else fail(errorMessage ?: "无法播放此视频，请检查文件格式、网络和服务器权限")

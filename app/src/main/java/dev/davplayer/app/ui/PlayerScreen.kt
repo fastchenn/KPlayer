@@ -140,7 +140,7 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                             Spacer(Modifier.height(18.dp))
                         }
                         PlayerProgress(engine, state, controllable, onSeeking = { seeking = it })
-                        CacheSpeed(state.networkBytesPerSecond, Modifier.padding(top = 4.dp))
+                        CacheSpeed(state, Modifier.padding(top = 4.dp))
                         PlayerTransport(engine, state, controllable, compact = landscape, modifier = Modifier.fillMaxWidth())
                         if (!landscape) HorizontalDivider(color = LineColor)
                         PlayerOptions(
@@ -166,7 +166,7 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                         IconButton(onClick = { boost.stop(); fullscreenPortrait = !fullscreenPortrait; controlsInteraction++ }) {
                             Icon(Icons.Outlined.ScreenRotation, "旋转屏幕方向", Modifier.size(20.dp))
                         }
-                        CacheSpeed(state.networkBytesPerSecond, Modifier.padding(horizontal = 8.dp))
+                        CacheSpeed(state, Modifier.padding(horizontal = 8.dp))
                     }
                     Column(
                         Modifier.align(Alignment.BottomCenter).fillMaxWidth()
@@ -200,8 +200,15 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
 }
 
 @Composable
-private fun CacheSpeed(bytesPerSecond: Long, modifier: Modifier = Modifier) {
-    Text("缓存速度 ${formatSize(bytesPerSecond.coerceAtLeast(0))}/s", color = MutedColor, fontSize = 11.sp, modifier = modifier)
+private fun CacheSpeed(state: PlaybackState, modifier: Modifier = Modifier) {
+    val text = buildString {
+        append("缓存速度 ${formatSize(state.networkBytesPerSecond.coerceAtLeast(0))}/s")
+        state.cacheProgress?.let { progress ->
+            append(" · 已存 ${formatSize(progress.storedBytes)}")
+            if (progress.reachedEnd) append(" · 已到片尾")
+        }
+    }
+    Text(text, color = MutedColor, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = modifier)
 }
 
 @Composable

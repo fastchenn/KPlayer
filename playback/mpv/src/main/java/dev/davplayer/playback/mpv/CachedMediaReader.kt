@@ -2,6 +2,7 @@ package dev.davplayer.playback.mpv
 
 import dev.davplayer.playback.api.PlaybackRequest
 import dev.davplayer.playback.api.CachedTimeRange
+import dev.davplayer.playback.api.CacheDownloadProgress
 import java.io.IOException
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -56,6 +57,7 @@ internal class CachedMediaReader(
     private class ReadAhead(val epoch: Long, val position: Long, val scope: MediaFetchScope = MediaFetchScope()) {
         val owned = ConcurrentHashMap<Long, Download>()
         @Volatile var finished = false
+        @Volatile var reachedEnd = false
         var failure: IOException? = null
     }
     @Volatile private var readAhead: ReadAhead? = null
@@ -79,6 +81,17 @@ internal class CachedMediaReader(
         val dependencies = synchronized(deliveredLock) { delivered }
         return cache.timeline(media.key, if (timelineEligible) observed else emptyList(),
             if (timelineEligible) dependencies else emptyList(), generation)
+    }
+
+    fun downloadProgress(): CacheDownloadProgress? {
+        val media = metadata?.media ?: return null
+        if (!cache.enabled || generation != cache.generation()) return null
+        val available = cache.byteRanges(media.key)
+        val run = readAhead
+        val start = (run?.position ?: 0L) / PlaybackDiskCache.BLOCK_BYTES * PlaybackDiskCache.BLOCK_BYTES
+        val reachedEnd = run != null && !run.scope.cancelled && run.epoch == seekEpoch && run.reachedEnd &&
+            available.any { it.start <= start && it.end >= media.size }
+        return CacheDownloadProgress(available.sumOf { it.end - it.start }, reachedEnd)
     }
 
     fun bypassed() { timelineEligible = false }
@@ -255,8 +268,8 @@ internal class CachedMediaReader(
         if (start >= meta.media.size || aheadStopped(run)) return null
         downloads[index]?.let { return it }
         val length = minOf(PlaybackDiskCache.BLOCK_BYTES.toLong(), meta.media.size - start).toInt()
+        if (cache.prefixLength(meta.media.key, index, length) == length) return null
         val prefix = cache.readPrefix(meta.media.key, index, length) ?: ByteArray(0)
-        if (prefix.size == length) return null
         return downloads.computeIfAbsent(index) {
             Download(ByteArray(length).also { prefix.copyInto(it) }, prefix.size).also { run.owned[index] = it }
         }
@@ -333,6 +346,7 @@ internal class CachedMediaReader(
                                 if (aheadStopped(run)) break
                                 val stored = cache.append(meta.media.key, currentIndex, offset, current.bytes, offset, count, generation)
                                 absolute += count
+                                cursor = absolute
                                 val complete = offset + count == current.bytes.size
                                 // Reserve before publishing the final bytes, so the foreground cannot race it.
                                 if (complete) reserve(run, meta, currentIndex + 1)
@@ -355,9 +369,9 @@ internal class CachedMediaReader(
                     if (aheadStopped(run) || ++failures >= 3) throw error
                     // Resume a broken response at the durable prefix, using a fresh redirect.
                     synchronized(readAheadLock) { if (!aheadStopped(run)) readAheadLock.wait(500L * failures) }
-                    cursor = index * PlaybackDiskCache.BLOCK_BYTES
                 }
             }
+            run.reachedEnd = cursor >= meta.media.size && !aheadStopped(run)
         } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
         catch (error: IOException) {
             run.failure = error

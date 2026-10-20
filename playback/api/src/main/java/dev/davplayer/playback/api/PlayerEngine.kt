@@ -31,6 +31,8 @@ data class PlayerCapabilities(
     val shaders: Boolean = false,
 )
 
+data class CacheDownloadProgress(val storedBytes: Long, val reachedEnd: Boolean)
+
 data class PlaybackState(
     val phase: PlaybackPhase = PlaybackPhase.IDLE,
     val positionMs: Long = 0,
@@ -47,6 +49,7 @@ data class PlaybackState(
     val bufferedUntilMs: Long? = null,
     /** Verified persistent ranges; unlike bufferedUntilMs, these survive reopening. */
     val cachedRanges: List<CachedTimeRange> = emptyList(),
+    val cacheProgress: CacheDownloadProgress? = null,
 )
 
 /** An explicitly discovered sidecar; credentials follow its own URL, not the video's redirect. */

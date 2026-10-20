@@ -74,6 +74,7 @@ internal class LoopbackMediaSource(
         cachedReader?.cachedTimeline(observed, durationMs).orEmpty()
 
     fun prepareSeek() { cachedReader?.prepareSeek() }
+    fun downloadProgress() = cachedReader?.downloadProgress()
 
     init {
         thread(name = "KPlayer-media-listener", isDaemon = true) {

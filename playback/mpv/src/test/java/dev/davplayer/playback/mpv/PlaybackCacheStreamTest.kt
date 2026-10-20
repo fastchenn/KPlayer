@@ -570,6 +570,8 @@ class PlaybackCacheStreamTest {
             assertEquals(content.size.toLong(), downloaded.get())
             assertArrayEquals(content.copyOfRange(content.size - 64, content.size), read(endpoint, "bytes=-64"))
             assertEquals(1, server.requestCount) // one long response across all disk blocks
+            runBlocking { withTimeout(2_000) { while (endpoint.downloadProgress()?.reachedEnd != true) kotlinx.coroutines.delay(10) } }
+            assertEquals(content.size.toLong(), endpoint.downloadProgress()!!.storedBytes)
         }
     }
 
@@ -664,7 +666,7 @@ class PlaybackCacheStreamTest {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val response = original.dispatch(request)
                 return if (request.method == "GET" && first.getAndSet(false))
-                    response.setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE)
+                    response.setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
                 else response
             }
         }

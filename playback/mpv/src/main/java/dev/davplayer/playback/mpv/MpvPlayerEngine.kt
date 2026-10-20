@@ -278,9 +278,11 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
             timelineWorker.execute {
                 try {
                     val ranges = currentSource.cachedTimeline(parseSeekableRanges(json), duration)
+                    val progress = currentSource.downloadProgress()
                     if (!finalSnapshot) main.post {
                         if (!released && generation == session && source === currentSource) {
                             reducer.cachedRanges(ranges)
+                            reducer.cacheProgress(progress)
                             publish()
                         }
                     }
