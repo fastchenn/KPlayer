@@ -141,7 +141,10 @@ internal class CachedMediaReader(
         val epoch = seekEpoch
         // Bounded header/index probes must not redirect the background download.
         val sequential = incoming["range"] == null || incoming["range"]?.matches(Regex("bytes=[0-9]+-")) == true
-        if (sequential) startReadAhead(meta, range.first, epoch)
+        val primary = if (sequential) synchronized(readAheadLock) {
+            startReadAhead(meta, range.first, epoch)
+            readAhead
+        } else null
         var headersSent = false
         var position = range.first
         try {
@@ -172,7 +175,7 @@ internal class CachedMediaReader(
                     }
                 }
                 position = blockStart + to
-                if (sequential && epoch == seekEpoch) synchronized(readAheadLock) {
+                if (sequential && epoch == seekEpoch && readAhead === primary) synchronized(readAheadLock) {
                     consumedPosition = maxOf(consumedPosition, position)
                     readAheadLock.notifyAll()
                 }
