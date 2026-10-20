@@ -68,6 +68,11 @@ class PlaybackDiskCache(
 
     internal fun generation(): Long = synchronized(lock) { epoch }
 
+    internal fun readAheadBudget(): Long = synchronized(lock) {
+        // Leave room for the playing block, metadata probes and a partially written block.
+        (maxBytes - 4L * BLOCK_BYTES).coerceAtLeast(BLOCK_BYTES.toLong())
+    }
+
     /** Inspect real lengths without touching LRU recency; a status poll must not keep data alive. */
     internal fun byteRanges(key: String): List<CachedByteRange> = synchronized(lock) {
         initialize()

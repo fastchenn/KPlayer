@@ -81,7 +81,7 @@ fun SettingsScreen(
         Text("硬件解码偏好将在下次打开视频时生效。", color = MutedColor, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp))
         SectionLabel("播放缓存")
         Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = PanelColor)) {
-            PreferenceRow("启用播放缓存", "将播放数据保存在本机，退出后保留", state.playbackCacheEnabled, onCacheEnabled,
+            PreferenceRow("启用播放缓存", "从播放位置持续缓存到片尾，退出后保留", state.playbackCacheEnabled, onCacheEnabled,
                 enabled = state.playbackCacheReady && !state.playbackCacheBusy)
             HorizontalDivider(color = LineColor, modifier = Modifier.padding(horizontal = 20.dp))
             Box {

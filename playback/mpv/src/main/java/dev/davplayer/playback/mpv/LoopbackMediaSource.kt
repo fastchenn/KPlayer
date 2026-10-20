@@ -60,9 +60,9 @@ internal class LoopbackMediaSource(
             request = request,
             cache = cache,
             fetcher = object : MediaFetcher {
-                override fun <T> useResponse(method: String, headers: Map<String, String>, read: (Response) -> T): T {
-                    val (response, call) = fetch(method, headers)
-                    try { return response.use(read) } finally { calls.remove(call) }
+                override fun <T> useResponse(method: String, headers: Map<String, String>, scope: MediaFetchScope?, read: (Response) -> T): T {
+                    val (response, call) = fetch(method, headers, scope)
+                    try { return response.use(read) } finally { calls.remove(call); scope?.detach(call) }
                 }
             },
             onBytesRead = onBytesRead,
@@ -72,6 +72,8 @@ internal class LoopbackMediaSource(
 
     fun cachedTimeline(observed: List<CachedTimeRange>, durationMs: Long?): List<CachedTimeRange> =
         cachedReader?.cachedTimeline(observed, durationMs).orEmpty()
+
+    fun prepareSeek() { cachedReader?.prepareSeek() }
 
     init {
         thread(name = "KPlayer-media-listener", isDaemon = true) {
@@ -176,11 +178,11 @@ internal class LoopbackMediaSource(
         } } finally { calls.remove(call) }
     }
 
-    private fun fetch(method: String, incoming: Map<String, String>): Pair<Response, Call> {
+    private fun fetch(method: String, incoming: Map<String, String>, scope: MediaFetchScope? = null): Pair<Response, Call> {
         var current = origin
         var sendOriginalHeaders = true
         repeat(6) { attempt ->
-            if (closed) throw IOException("Stream closed")
+            if (closed || scope?.cancelled == true) throw IOException("Stream closed")
             val builder = Request.Builder().url(current).method(method, null)
             request.headers.forEach { (name, value) ->
                 val normalized = name.lowercase(java.util.Locale.ROOT)
@@ -200,8 +202,9 @@ internal class LoopbackMediaSource(
             }
             val call = client.newCall(builder.build())
             calls.add(call)
+            scope?.attach(call)
             if (closed) call.cancel()
-            val response = try { call.execute() } catch (error: IOException) { calls.remove(call); throw error }
+            val response = try { call.execute() } catch (error: IOException) { calls.remove(call); scope?.detach(call); throw error }
             if (response.code !in setOf(301, 302, 303, 307, 308)) return response to call
             try { response.use {
                 val destination = response.header("Location")?.let(current::resolve)
@@ -215,7 +218,7 @@ internal class LoopbackMediaSource(
                 if (attempt == 5) throw MediaSourceException("视频跳转次数过多，请检查服务器的直链配置")
                 if (!current.sameOrigin(destination)) sendOriginalHeaders = false
                 current = destination
-            } } finally { calls.remove(call) }
+            } } finally { calls.remove(call); scope?.detach(call) }
         }
         throw IOException("Cannot read video")
     }

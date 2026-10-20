@@ -65,7 +65,13 @@ internal class NativeMpvClient(
         MPVLib.command(arrayOf("loadfile", url, "replace"))
     }
     fun pause(paused: Boolean) { MPVLib.setPropertyBoolean("pause", paused) }
-    fun seek(positionMs: Long) { MPVLib.command(arrayOf("seek", (positionMs / 1000.0).toString(), "absolute+exact")) }
+    fun seek(positionMs: Long) {
+        // Force a real byte seek even when the target is in mpv's RAM cache. The disk
+        // cache serves existing bytes locally; the next HTTP request anchors read-ahead.
+        MPVLib.setPropertyString("demuxer-seekable-cache", "no")
+        MPVLib.command(arrayOf("seek", (positionMs / 1000.0).toString(), "absolute+exact"))
+    }
+    fun playbackRestarted() { MPVLib.setPropertyString("demuxer-seekable-cache", "auto") }
     fun speed(speed: Float) { MPVLib.setPropertyDouble("speed", speed.toDouble()) }
     fun volume(percent: Double) { MPVLib.setPropertyDouble("volume", percent) }
     fun eof() = MPVLib.getPropertyBoolean("eof-reached") == true

@@ -3,7 +3,7 @@ name: Android checks
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, fix/continuous-cache]
   pull_request:
 
 permissions:
@@ -31,6 +31,20 @@ jobs:
         with:
           name: k-player-release-unsigned
           path: app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Verify metadata and sign installable APK
+        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/continuous-cache'
+        env:
+          KPLAYER_RELEASE_SIGNING: ${{ secrets.KPLAYER_RELEASE_SIGNING }}
+        run: |
+          python tools/release.py prepare
+          python tools/release.py sign
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/continuous-cache'
+        with:
+          name: k-player-0.3.4-signed
+          path: dist/0.3.4/*
+          if-no-files-found: error
+          retention-days: 14
       - name: Debug APK and device test APKs
         run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :playback:mpv:assembleDebugAndroidTest --no-daemon
       - uses: actions/upload-artifact@v4

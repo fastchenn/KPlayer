@@ -116,6 +116,7 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
                                     loadExternalSubtitles(current)
                                     refreshTracks()
                                 }
+                                MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> client?.playbackRestarted()
                                 MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
                                     reducer.endFile(client!!.eof(), networkError)
                                     if (reducer.value.phase == PlaybackPhase.ERROR) fail(reducer.value.message!!)
@@ -183,6 +184,7 @@ class MpvPlayerEngine(context: Context, private val diskCache: PlaybackDiskCache
 
     override fun seekTo(positionMs: Long) {
         if (released || !state.value.seekable) return
+        source?.prepareSeek()
         client?.seek(positionMs.coerceIn(0, state.value.durationMs ?: Long.MAX_VALUE))
     }
 

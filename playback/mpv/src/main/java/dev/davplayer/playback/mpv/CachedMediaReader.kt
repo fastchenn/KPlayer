@@ -9,9 +9,20 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Response
+import okhttp3.Call
+
+/** Cancels only the old read-ahead, including a request still waiting for headers. */
+internal class MediaFetchScope {
+    @Volatile var cancelled = false
+        private set
+    private val calls = ConcurrentHashMap.newKeySet<Call>()
+    fun attach(call: Call) { calls.add(call); if (cancelled) call.cancel() }
+    fun detach(call: Call) { calls.remove(call) }
+    fun cancel() { cancelled = true; calls.forEach(Call::cancel) }
+}
 
 internal interface MediaFetcher {
-    fun <T> useResponse(method: String, headers: Map<String, String>, read: (Response) -> T): T
+    fun <T> useResponse(method: String, headers: Map<String, String>, scope: MediaFetchScope? = null, read: (Response) -> T): T
 }
 
 /** User-enabled local media storage, independent of HTTP proxy/browser cache policy. */
@@ -25,6 +36,7 @@ internal class CachedMediaReader(
     private data class Metadata(val media: CachedMediaInfo, val etag: String? = null, val modified: String? = null)
     private class Download(val bytes: ByteArray, var available: Int) {
         val monitor = Object()
+        val scope = MediaFetchScope()
         var complete = false
         var error: IOException? = null
     }
@@ -37,6 +49,18 @@ internal class CachedMediaReader(
     private val downloader = Executors.newFixedThreadPool(4) { runnable ->
         Thread(runnable, "KPlayer-cache-block").apply { isDaemon = true }
     }
+    private val readAheadWorker = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "KPlayer-read-ahead").apply { isDaemon = true }
+    }
+    private val readAheadLock = Object()
+    private class ReadAhead(val epoch: Long, val position: Long, val scope: MediaFetchScope = MediaFetchScope()) {
+        val owned = ConcurrentHashMap<Long, Download>()
+        @Volatile var finished = false
+        var failure: IOException? = null
+    }
+    @Volatile private var readAhead: ReadAhead? = null
+    @Volatile private var seekEpoch = 0L
+    @Volatile private var consumedPosition = 0L
     @Volatile private var closed = false
     @Volatile private var metadata: Metadata? = null
     private var probed = false
@@ -58,6 +82,20 @@ internal class CachedMediaReader(
     }
 
     fun bypassed() { timelineEligible = false }
+
+    /** The next open-ended libmpv request supplies the exact container byte offset. */
+    fun prepareSeek() {
+        synchronized(readAheadLock) {
+            seekEpoch++
+            readAhead?.let { it.scope.cancel(); finishAhead(it) }
+            for ((index, block) in downloads) {
+                block.scope.cancel()
+                synchronized(block.monitor) { block.error = IOException("Seek superseded"); block.complete = true; block.monitor.notifyAll() }
+                downloads.remove(index, block)
+            }
+            readAheadLock.notifyAll()
+        }
+    }
 
     private fun delivered(position: Long, count: Int) {
         if (count <= 0) return
@@ -87,10 +125,14 @@ internal class CachedMediaReader(
             append("\r\n")
         }.toByteArray(Charsets.US_ASCII)
         if (method == "HEAD") { output.write(headers); return true }
+        val epoch = seekEpoch
+        // Bounded header/index probes must not redirect the background download.
+        val sequential = incoming["range"] == null || incoming["range"]?.matches(Regex("bytes=[0-9]+-")) == true
+        if (sequential) startReadAhead(meta, range.first, epoch)
         var headersSent = false
         var position = range.first
         try {
-            while (position <= range.last && !stopped()) {
+            while (position <= range.last && !stopped() && epoch == seekEpoch) {
                 val index = position / PlaybackDiskCache.BLOCK_BYTES
                 val blockStart = index * PlaybackDiskCache.BLOCK_BYTES
                 var from = (position - blockStart).toInt()
@@ -103,9 +145,9 @@ internal class CachedMediaReader(
                     output.write(prefix, from, to - from)
                 } else {
                     val download = download(meta, index, length, prefix)
-                    while (from < to && !stopped()) {
+                    while (from < to && !stopped() && epoch == seekEpoch) {
                         val available = synchronized(download.monitor) {
-                            while (download.available <= from && !download.complete && !stopped()) download.monitor.wait(250)
+                            while (download.available <= from && !download.complete && !stopped() && epoch == seekEpoch) download.monitor.wait(250)
                             if (download.available <= from) download.error?.let { throw it }
                             minOf(download.available, to)
                         }
@@ -117,6 +159,10 @@ internal class CachedMediaReader(
                     }
                 }
                 position = blockStart + to
+                if (sequential && epoch == seekEpoch) synchronized(readAheadLock) {
+                    consumedPosition = maxOf(consumedPosition, position)
+                    readAheadLock.notifyAll()
+                }
             }
         } catch (error: SourceChanged) {
             synchronized(this) { metadata = null; probed = false }
@@ -184,18 +230,167 @@ internal class CachedMediaReader(
         return Metadata(info)
     }
 
+    /** One independent upstream stream, with only two live blocks in memory. */
+    private fun startReadAhead(meta: Metadata, position: Long, epoch: Long) {
+        synchronized(readAheadLock) {
+            if (epoch != seekEpoch || stopped()) return
+            val previous = readAhead
+            if (previous != null && previous.epoch == epoch && previous.position == position && !previous.finished && !previous.scope.cancelled) return
+            previous?.let { it.scope.cancel(); finishAhead(it) }
+            consumedPosition = position
+            val run = ReadAhead(epoch, position)
+            readAhead = run
+            // Reserve before serving so playback joins this download instead of duplicating it.
+            reserve(run, meta, position / PlaybackDiskCache.BLOCK_BYTES)
+            try { readAheadWorker.execute { fillAhead(run, meta, position) } }
+            catch (_: RejectedExecutionException) { finishAhead(run) }
+        }
+    }
+
+    private fun aheadStopped(run: ReadAhead) = stopped() || run.scope.cancelled || run.epoch != seekEpoch ||
+        !cache.enabled || cache.generation() != generation
+
+    private fun reserve(run: ReadAhead, meta: Metadata, index: Long): Download? {
+        val start = index * PlaybackDiskCache.BLOCK_BYTES
+        if (start >= meta.media.size || aheadStopped(run)) return null
+        downloads[index]?.let { return it }
+        val length = minOf(PlaybackDiskCache.BLOCK_BYTES.toLong(), meta.media.size - start).toInt()
+        val prefix = cache.readPrefix(meta.media.key, index, length) ?: ByteArray(0)
+        if (prefix.size == length) return null
+        return downloads.computeIfAbsent(index) {
+            Download(ByteArray(length).also { prefix.copyInto(it) }, prefix.size).also { run.owned[index] = it }
+        }
+    }
+
+    private fun fillAhead(run: ReadAhead, meta: Metadata, position: Long) {
+        var cursor = position / PlaybackDiskCache.BLOCK_BYTES * PlaybackDiskCache.BLOCK_BYTES
+        var failures = 0
+        try {
+            while (cursor < meta.media.size && !aheadStopped(run)) {
+                val index = cursor / PlaybackDiskCache.BLOCK_BYTES
+                val block = reserve(run, meta, index)
+                if (block == null) { cursor = minOf((index + 1) * PlaybackDiskCache.BLOCK_BYTES, meta.media.size); continue }
+                if (run.owned[index] !== block) {
+                    // A small demuxer probe is already downloading this block.
+                    synchronized(block.monitor) {
+                        while (!block.complete && !aheadStopped(run)) block.monitor.wait(250)
+                        block.error?.let { throw it }
+                    }
+                    cursor = minOf((index + 1) * PlaybackDiskCache.BLOCK_BYTES, meta.media.size)
+                    continue
+                }
+                val start = index * PlaybackDiskCache.BLOCK_BYTES + block.available
+                // Skip existing cache spans with a new request, rather than download them again.
+                val nextCached = cache.byteRanges(meta.media.key).firstOrNull { it.start > start }?.start
+                val end = minOf(meta.media.size, nextCached ?: meta.media.size) - 1
+                val headers = mutableMapOf("range" to "bytes=$start-$end")
+                (meta.etag?.takeUnless { it.startsWith("W/", true) } ?: meta.modified)?.let { headers["if-range"] = it }
+                try {
+                    fetcher.useResponse("GET", headers, run.scope) { response ->
+                        val body = response.body ?: throw IOException("Empty media body")
+                        var absolute = start
+                        val limit = when (response.code) {
+                            206 -> {
+                                val range = response.header("Content-Range")?.let(CONTENT_RANGE::matchEntire) ?: throw SourceChanged()
+                                val last = range.groupValues[2].toLongOrNull() ?: throw SourceChanged()
+                                if (range.groupValues[1].toLongOrNull() != start || range.groupValues[3].toLongOrNull() != meta.media.size ||
+                                    last < start || last >= meta.media.size) throw SourceChanged()
+                                minOf(end, last)
+                            }
+                            200 -> {
+                                if (body.contentLength() >= 0 && body.contentLength() != meta.media.size) throw SourceChanged()
+                                absolute = 0
+                                end
+                            }
+                            else -> throw IOException("Media HTTP ${response.code}")
+                        }
+                        if ((meta.etag != null && response.header("ETag")?.let { it != meta.etag } == true) ||
+                            (meta.modified != null && response.header("Last-Modified")?.let { it != meta.modified } == true)) throw SourceChanged()
+                        body.byteStream().use { input ->
+                            val skipped = ByteArray(128 * 1024)
+                            while (absolute < start && !aheadStopped(run)) {
+                                val count = input.read(skipped, 0, minOf(skipped.size.toLong(), start - absolute).toInt())
+                                if (count < 0) throw IOException("Incomplete media body")
+                                onBytesRead(count)
+                                capture(meta.media.key, absolute, skipped, count)
+                                absolute += count
+                            }
+                            while (absolute <= limit && !aheadStopped(run)) {
+                                // Never evict unread ahead data to make space for still later data.
+                                synchronized(readAheadLock) {
+                                    while (absolute - consumedPosition >= cache.readAheadBudget() && !aheadStopped(run))
+                                        readAheadLock.wait(250)
+                                }
+                                if (aheadStopped(run)) break
+                                val currentIndex = absolute / PlaybackDiskCache.BLOCK_BYTES
+                                val current = reserve(run, meta, currentIndex)
+                                if (current == null || run.owned[currentIndex] !== current) break
+                                val offset = (absolute % PlaybackDiskCache.BLOCK_BYTES).toInt()
+                                val count = input.read(current.bytes, offset,
+                                    minOf(128 * 1024L, current.bytes.size.toLong() - offset, limit - absolute + 1).toInt())
+                                if (count < 0) throw IOException("Incomplete media body")
+                                onBytesRead(count)
+                                if (aheadStopped(run)) break
+                                val stored = cache.append(meta.media.key, currentIndex, offset, current.bytes, offset, count, generation)
+                                absolute += count
+                                val complete = offset + count == current.bytes.size
+                                // Reserve before publishing the final bytes, so the foreground cannot race it.
+                                if (complete) reserve(run, meta, currentIndex + 1)
+                                synchronized(current.monitor) { current.available = offset + count; current.monitor.notifyAll() }
+                                if (complete) {
+                                    synchronized(held) { held[currentIndex] = current.bytes }
+                                    synchronized(current.monitor) { current.complete = true; current.monitor.notifyAll() }
+                                    downloads.remove(currentIndex, current)
+                                    run.owned.remove(currentIndex, current)
+                                }
+                                if (!stored) throw StorageFailure()
+                                failures = 0
+                            }
+                        }
+                        cursor = absolute
+                    }
+                } catch (error: StorageFailure) { throw error }
+                catch (error: SourceChanged) { throw error }
+                catch (error: IOException) {
+                    if (aheadStopped(run) || ++failures >= 3) throw error
+                    // Resume a broken response at the durable prefix, using a fresh redirect.
+                    synchronized(readAheadLock) { if (!aheadStopped(run)) readAheadLock.wait(500L * failures) }
+                    cursor = index * PlaybackDiskCache.BLOCK_BYTES
+                }
+            }
+        } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+        catch (error: IOException) {
+            run.failure = error
+            if (!aheadStopped(run)) cache.reportIssue(if (error is SourceChanged)
+                "视频信息已变化，请从媒体库重新打开后缓存" else "持续缓存暂时中断，播放时会重试缺失数据")
+        } finally { finishAhead(run) }
+    }
+
+    private fun finishAhead(run: ReadAhead) {
+        run.finished = true
+        for ((index, block) in run.owned) {
+            synchronized(block.monitor) {
+                block.error = run.failure ?: IOException("Read-ahead stopped")
+                block.complete = true
+                block.monitor.notifyAll()
+            }
+            downloads.remove(index, block)
+        }
+        run.owned.clear()
+    }
+
     private fun download(meta: Metadata, index: Long, length: Int, prefix: ByteArray): Download = downloads.computeIfAbsent(index) {
         Download(ByteArray(length).also { prefix.copyInto(it) }, prefix.size).also { queued ->
             try { downloader.execute {
                 try {
                     var offset = prefix.size
                     val blockStart = index * PlaybackDiskCache.BLOCK_BYTES
-                    while (offset < length && !stopped()) {
+                    while (offset < length && !stopped() && !queued.scope.cancelled) {
                         val start = blockStart + offset
                         val end = blockStart + length - 1
                         val headers = mutableMapOf("range" to "bytes=$start-$end")
                         (meta.etag?.takeUnless { it.startsWith("W/", true) } ?: meta.modified)?.let { headers["if-range"] = it }
-                        fetcher.useResponse("GET", headers) { response ->
+                        fetcher.useResponse("GET", headers, queued.scope) { response ->
                             val body = response.body ?: throw IOException("Empty media body")
                             var absolute = start
                             val limit = when (response.code) {
@@ -219,17 +414,18 @@ internal class CachedMediaReader(
                                 val buffer = ByteArray(32 * 1024)
                                 // Some cloud drives ignore Range and return the whole file.
                                 // Retain the skipped prefix too, rather than disabling storage.
-                                while (absolute < start && !stopped()) {
+                                while (absolute < start && !stopped() && !queued.scope.cancelled) {
                                     val count = input.read(buffer, 0, minOf(buffer.size.toLong(), start - absolute).toInt())
                                     if (count < 0) throw IOException("Incomplete media body")
                                     onBytesRead(count)
                                     capture(meta.media.key, absolute, buffer, count)
                                     absolute += count
                                 }
-                                while (absolute <= limit && !stopped()) {
+                                while (absolute <= limit && !stopped() && !queued.scope.cancelled) {
                                     val count = input.read(queued.bytes, offset, minOf(32 * 1024L, limit - absolute + 1).toInt())
                                     if (count < 0) throw IOException("Incomplete media block")
                                     onBytesRead(count)
+                                    if (queued.scope.cancelled) throw IOException("Seek superseded")
                                     cache.append(meta.media.key, index, offset, queued.bytes, offset, count, generation)
                                     offset += count
                                     absolute += count
@@ -241,7 +437,7 @@ internal class CachedMediaReader(
                     if (offset != length) throw IOException("Stream closed")
                     synchronized(held) { held[index] = queued.bytes }
                 } catch (error: IOException) {
-                    if (!stopped()) cache.reportIssue(if (error is SourceChanged) "视频信息已变化，请从媒体库重新打开后缓存" else "缓存下载中断，请检查服务器与视频直链")
+                    if (!stopped() && !queued.scope.cancelled) cache.reportIssue(if (error is SourceChanged) "视频信息已变化，请从媒体库重新打开后缓存" else "缓存下载中断，请检查服务器与视频直链")
                     synchronized(queued.monitor) { queued.error = error }
                 } finally {
                     synchronized(queued.monitor) { queued.complete = true; queued.monitor.notifyAll() }
@@ -267,7 +463,14 @@ internal class CachedMediaReader(
     }
 
     private fun stopped() = closed || isClosed()
-    override fun close() { closed = true; downloader.shutdownNow() }
+    override fun close() {
+        closed = true
+        downloads.values.forEach { it.scope.cancel() }
+        synchronized(readAheadLock) { readAhead?.scope?.cancel(); readAheadLock.notifyAll() }
+        readAheadWorker.shutdownNow()
+        downloader.shutdownNow()
+    }
+    private class StorageFailure : IOException("Cannot persist read-ahead")
     private class SourceChanged : IOException("Media source changed")
 
     companion object {

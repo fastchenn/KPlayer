@@ -75,7 +75,7 @@ class PlaybackCacheStreamTest {
     ) = LoopbackMediaSource(request, diskCache = cache, onBytesRead = { downloaded.addAndGet(it.toLong()) })
 
     private fun awaitCache(cache: PlaybackDiskCache, expected: Long = content.size.toLong()) = runBlocking {
-        withTimeout(6_000) { cache.usedBytes.first { it == expected } }
+        withTimeout(6_000) { cache.usedBytes.first { it >= expected } }
     }
 
     private fun read(source: LoopbackMediaSource, range: String? = null): ByteArray {
@@ -556,5 +556,127 @@ class PlaybackCacheStreamTest {
         val before = server.requestCount
         source(cache, playback).use { assertArrayEquals(content.copyOfRange(100, 200), read(it, "bytes=100-199")) }
         assertEquals(before, server.requestCount)
+    }
+
+    @Test fun readAheadContinuesToEofAfterThePlayerStopsReading() {
+        content = ByteArray(PlaybackDiskCache.BLOCK_BYTES * 6 + 17) { (it % 251).toByte() }
+        val cache = PlaybackDiskCache(temporary.newFolder())
+        source(cache, request(knownSize = true)).use { endpoint ->
+            consumer.newCall(Request.Builder().url(endpoint.url).header("Range", "bytes=0-").build()).execute().use {
+                assertEquals(0, it.body!!.byteStream().read())
+                // Equivalent to the demuxer filling its RAM buffer or pausing playback.
+            }
+            awaitCache(cache)
+            assertEquals(content.size.toLong(), downloaded.get())
+            assertArrayEquals(content.copyOfRange(content.size - 64, content.size), read(endpoint, "bytes=-64"))
+            assertEquals(1, server.requestCount) // one long response across all disk blocks
+        }
+    }
+
+    @Test fun aResumePositionDownloadsOnlyThatBlockThroughEof() {
+        content = ByteArray(PlaybackDiskCache.BLOCK_BYTES * 5 + 37) { (it % 251).toByte() }
+        val offset = PlaybackDiskCache.BLOCK_BYTES * 3
+        val cache = PlaybackDiskCache(temporary.newFolder())
+        source(cache, request(knownSize = true)).use { endpoint ->
+            consumer.newCall(Request.Builder().url(endpoint.url).header("Range", "bytes=$offset-").build()).execute().use {
+                assertEquals(content[offset].toInt() and 255, it.body!!.byteStream().read())
+            }
+            awaitCache(cache, content.size.toLong() - offset)
+            assertEquals(content.size.toLong() - offset, downloaded.get())
+            assertEquals(content.size.toLong() - offset, cache.usedBytes.value)
+            assertEquals("bytes=$offset-${content.lastIndex}", server.takeRequest(1, TimeUnit.SECONDS)!!.getHeader("Range"))
+        }
+    }
+
+    @Test fun seekingCancelsTheOldStreamAndContinuesFromTheNewPosition() {
+        content = ByteArray(PlaybackDiskCache.BLOCK_BYTES * 8) { (it % 251).toByte() }
+        val original = server.dispatcher
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = original.dispatch(request)
+                .throttleBody(128 * 1024, 40, TimeUnit.MILLISECONDS)
+        }
+        val cache = PlaybackDiskCache(temporary.newFolder())
+        val offset = PlaybackDiskCache.BLOCK_BYTES * 6
+        source(cache, request(knownSize = true)).use { endpoint ->
+            consumer.newCall(Request.Builder().url(endpoint.url).header("Range", "bytes=0-").build()).execute().use {
+                assertEquals(0, it.body!!.byteStream().read())
+            }
+            endpoint.prepareSeek()
+            consumer.newCall(Request.Builder().url(endpoint.url).header("Range", "bytes=$offset-").build()).execute().use {
+                assertEquals(content[offset].toInt() and 255, it.body!!.byteStream().read())
+            }
+            runBlocking { withTimeout(6_000) {
+                while (true) {
+                    val files = cache.directory().listFiles().orEmpty().filter { it.name.endsWith(".blk") && it.name.substringBeforeLast('.').endsWith(".7") }
+                    if (files.any { it.length() == PlaybackDiskCache.BLOCK_BYTES.toLong() }) break
+                    kotlinx.coroutines.delay(20)
+                }
+            } }
+            val firstBlock = cache.directory().listFiles().orEmpty().first { it.name.endsWith(".0.blk") }
+            assertTrue("Old position must not keep filling", firstBlock.length() < PlaybackDiskCache.BLOCK_BYTES)
+            assertTrue("Do not download the skipped middle", cache.directory().listFiles().orEmpty().none {
+                it.name.endsWith(".2.blk") || it.name.endsWith(".3.blk") || it.name.endsWith(".4.blk") || it.name.endsWith(".5.blk")
+            })
+            assertEquals(2, server.requestCount)
+        }
+    }
+
+    @Test fun readAheadSkipsAnAlreadyCachedSpanWithoutRedownloadingIt() {
+        val block = PlaybackDiskCache.BLOCK_BYTES
+        content = ByteArray(block * 4 + 17) { (it % 251).toByte() }
+        val cache = PlaybackDiskCache(temporary.newFolder())
+        val playback = request(knownSize = true)
+        source(cache, playback).use { endpoint ->
+            read(endpoint, "bytes=${2 * block}-${3 * block - 1}")
+            awaitCache(cache, block.toLong())
+            consumer.newCall(Request.Builder().url(endpoint.url).header("Range", "bytes=0-").build()).execute().use {
+                assertEquals(0, it.body!!.byteStream().read())
+            }
+            awaitCache(cache)
+            assertEquals(content.size.toLong(), downloaded.get())
+            assertArrayEquals(content, read(endpoint))
+            assertEquals(content.size.toLong(), downloaded.get())
+        }
+    }
+
+    @Test fun capacityPausesReadAheadWithoutEvictingUnreadBytesAndReadingResumesIt() {
+        val block = PlaybackDiskCache.BLOCK_BYTES
+        content = ByteArray(block * 10) { (it % 251).toByte() }
+        val cache = PlaybackDiskCache(temporary.newFolder(), maxBytes = 6L * block)
+        source(cache, request(knownSize = true)).use { endpoint ->
+            consumer.newCall(Request.Builder().url(endpoint.url).header("Range", "bytes=0-").build()).execute().use { response ->
+                assertEquals(0, response.body!!.byteStream().read())
+                Thread.sleep(200)
+                assertTrue(cache.usedBytes.value <= 6L * block)
+                // Consume the original stream; all bytes remain correct while the bounded window advances.
+                val remaining = response.body!!.byteStream().readBytes()
+                assertArrayEquals(content.copyOfRange(1, content.size), remaining)
+            }
+            assertTrue(cache.usedBytes.value <= 6L * block)
+        }
+    }
+
+    @Test fun interruptedContinuousResponseResumesAtTheSavedPrefix() {
+        content = ByteArray(PlaybackDiskCache.BLOCK_BYTES * 3) { (it % 251).toByte() }
+        val original = server.dispatcher
+        val first = java.util.concurrent.atomic.AtomicBoolean(true)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val response = original.dispatch(request)
+                return if (request.method == "GET" && first.getAndSet(false))
+                    response.setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE)
+                else response
+            }
+        }
+        val cache = PlaybackDiskCache(temporary.newFolder())
+        source(cache, request(knownSize = true)).use { endpoint ->
+            assertArrayEquals(content, read(endpoint))
+            awaitCache(cache)
+            assertEquals(content.size.toLong(), downloaded.get())
+            assertEquals(2, server.requestCount)
+            assertEquals("bytes=0-${content.lastIndex}", server.takeRequest(1, TimeUnit.SECONDS)!!.getHeader("Range"))
+            val resumed = server.takeRequest(1, TimeUnit.SECONDS)!!.getHeader("Range")!!.substringAfter("bytes=").substringBefore('-').toLong()
+            assertTrue("Resume must keep the downloaded prefix", resumed > 0)
+        }
     }
 }
