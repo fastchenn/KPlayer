@@ -4,9 +4,9 @@ GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上�
 
 ## 云端验证结果
 
-2026-10-21（Asia/Shanghai）已完成 [0.3.5 Android checks 签名构建](https://github.com/fastchenn/KPlayer/actions/runs/39464730492)。应用 67 项和播放器 92 项 Release 单元测试（合计 159 项）及 10 项发布工具检查通过；Lint 无错误、8 项警告。APK 的原包名、0.3.5 / 13 版本、关闭调试、固定证书、ARM64、v2/v3 签名和 16 KB 对齐均通过检查。设备用例已编译，未运行真机或模拟器自动回归。
+2026-10-21（Asia/Shanghai）已完成 [0.3.5 Signed release 签名发布](https://github.com/fastchenn/KPlayer/actions/runs/39469199403)。应用 67 项和播放器 92 项 Release 单元测试（合计 159 项）及 10 项发布工具检查通过；Lint 无错误、8 项警告。APK 的原包名、0.3.5 / 13 版本、关闭调试、固定证书、ARM64、v2/v3 签名和 16 KB 对齐均通过检查。Android checks 已编译设备用例；未运行真机或模拟器自动回归。
 
-当前版本发布页为 [0.3.5 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.5)。Signed release 发布流程会再次验证，并提供对应原生源码。准确检查结果由同页 `RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt` 记录。
+当前版本发布页为 [0.3.5 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.5)。Signed release 已完成构建、原生源码打包、附件校验和发布。准确检查结果由同页 `RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt` 记录。
 
 ## 修改代码
 

@@ -1,11 +1,7 @@
 name: Signed release
-run-name: "Signed release · publish=${{ inputs.publish || github.event_name == 'push' }}"
+run-name: "Signed release · publish=${{ inputs.publish }}"
 
 on:
-  # One-time publication requested by the maintainer; removed after v0.3.5 is published.
-  push:
-    branches: [main]
-    paths: [docs/releases/v0.3.5.md]
   workflow_dispatch:
     inputs:
       publish:
@@ -23,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Publish K Player 0.3.5')
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -38,7 +34,7 @@ jobs:
       - name: Check version and release sources
         id: version
         env:
-          PUBLISH: ${{ inputs.publish || (github.event_name == 'push' && github.event.head_commit.message == 'Publish K Player 0.3.5') }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
           args=()
           if [ "$PUBLISH" = true ]; then args+=(--publish); fi
@@ -93,7 +89,7 @@ jobs:
           echo 'Download the signed artifact below. Publishing only runs when the publish input is enabled.' >> "$GITHUB_STEP_SUMMARY"
 
   publish:
-    if: (inputs.publish || github.event_name == 'push') && needs.build.result == 'success'
+    if: inputs.publish && needs.build.result == 'success'
     needs: build
     runs-on: ubuntu-latest
     permissions:
