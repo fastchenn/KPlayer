@@ -14,7 +14,7 @@ Release 的 `Source code (zip)` / `Source code (tar.gz)` 对应 `v0.3.5` 标签�
 默认构建下载已校验的官方原生二进制，不需要 NDK。若要替换原生组件，按下面步骤重建，
 将对应 ABI 的十个 `.so` 放入 `playback/mpv/build/generated/mpv/jniLibs/<abi>/`，
 再用 `./gradlew :app:assembleDebug -x :playback:mpv:prepareMpvNative` 打包自建库。
-0.3.5 发布附件使用 Release 构建类型，关闭调试，使用固定 K Player Release 专用证书。0.2.5 的旧私钥目前未找到，0.3.0 使用另一个 CI 临时签名，因此本版不能覆盖这些旧签名版本。本版及后续正式版沿用 0.3.1 的固定密钥，可覆盖升级 0.3.1。源码不包含私钥；本地未设置签名环境变量时只生成未签名 Release APK，签名步骤见 docs/DEVELOPMENT.md。
+0.3.5 发布附件使用 Release 构建类型，关闭调试，使用固定 K Player Release 专用证书。0.2.5 的旧私钥目前未找到，0.3.0 使用另一个 CI 临时签名，因此本版不能覆盖这些旧签名版本。本版及后续版本沿用 0.3.1 的固定密钥，可覆盖升级 0.3.1。源码不包含私钥；本地未设置签名环境变量时只生成未签名 Release APK，签名步骤见 docs/DEVELOPMENT.md。
 
 主分支已配置固定证书的 GitHub Actions 云端签名和发布，无需维护本机源码；参见[通过 GitHub 更新和发布](https://github.com/fastchenn/KPlayer/blob/main/docs/GITHUB_RELEASE.md)。`v0.3.5` 标签和发布附件保留发布时的源码与校验值，不因后续工作流或文档更新而移动或替换。
 
