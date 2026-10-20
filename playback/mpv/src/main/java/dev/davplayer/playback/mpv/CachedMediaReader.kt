@@ -175,9 +175,11 @@ internal class CachedMediaReader(
                     }
                 }
                 position = blockStart + to
-                if (sequential && epoch == seekEpoch && readAhead === primary) synchronized(readAheadLock) {
-                    consumedPosition = maxOf(consumedPosition, position)
-                    readAheadLock.notifyAll()
+                if (sequential) synchronized(readAheadLock) {
+                    if (epoch == seekEpoch && readAhead === primary) {
+                        consumedPosition = maxOf(consumedPosition, position)
+                        readAheadLock.notifyAll()
+                    }
                 }
             }
         } catch (error: SourceChanged) {
