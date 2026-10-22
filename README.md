@@ -2,7 +2,7 @@
 
 安卓 WebDAV 视频播放器，中文深色界面，使用 libmpv 播放内核。最低 Android 8.0，发布 APK 支持 **arm64-v8a**。
 
-[下载 Android APK](https://github.com/fastchenn/KPlayer/releases/download/v0.3.5/k-player-0.3.5-arm64.apk) · [查看发布说明](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.5)
+[下载 Android APK](https://github.com/fastchenn/KPlayer/releases/download/v0.3.6/k-player-0.3.6-arm64.apk) · [查看发布说明](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.6)
 
 ## 界面预览
 
@@ -14,9 +14,9 @@
 
 ## 下载
 
-从 [0.3.5 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.5) 下载 `k-player-0.3.5-arm64.apk`。同页提供原生组件对应源码、APK 签名信息和 `SHA256SUMS.txt`。
+从 [0.3.6 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.6) 下载 `k-player-0.3.6-arm64.apk`。同页提供原生组件对应源码、APK 签名信息和 `SHA256SUMS.txt`。
 
-0.3.5 为关闭调试的 Release APK，沿用 0.3.1 的固定 K Player Release 专用证书，可覆盖升级 0.3.1 / 0.3.2 / 0.3.3 / 0.3.4 并保留应用数据。后续发布已配置为通过 GitHub Actions 加密 Secret 使用同一密钥签名，维护者保留独立备份。0.2.5 的旧签名私钥目前未找到，0.3.0 使用另一把 CI 临时密钥，因此本版不能直接覆盖这些旧签名版本。若提示签名冲突，请保留原应用和数据；卸载会清除配置、观看记录及缓存。本版没有自动迁移，后续版本将沿用 0.3.1 的固定密钥。
+0.3.6 为关闭调试的 Release APK，沿用 0.3.1 的固定 K Player Release 专用证书，可覆盖升级 0.3.1 / 0.3.2 / 0.3.3 / 0.3.4 / 0.3.5 并保留应用数据。后续发布已配置为通过 GitHub Actions 加密 Secret 使用同一密钥签名，维护者保留独立备份。0.2.5 的旧签名私钥目前未找到，0.3.0 使用另一把 CI 临时密钥，因此本版不能直接覆盖这些旧签名版本。若提示签名冲突，请保留原应用和数据；卸载会清除配置、观看记录及缓存。本版没有自动迁移，后续版本将沿用 0.3.1 的固定密钥。
 
 ## 功能
 
@@ -42,13 +42,13 @@
 
 容量为所有文件共享的上限，达到上限会淘汰最久未使用的数据。关闭缓存会保留文件；主动清除、缩小容量、清除应用数据或卸载会删除相应数据。**未下载的区域仍需联网**；忽略 Range 的源站首次跳到未缓存位置时，仍需读取前面的字节。源文件被替换后，从媒体库重新打开以获取最新版本。尚无独立离线媒体库页面。
 
-0.3.5 包含持续缓存与下载速度优化，修复后台持续下载时白条停滞、正常播放区间漏显示的问题。沿用原包名、固定发布证书和磁盘缓存格式，可直接覆盖升级 0.3.1—0.3.4，保留连接、观看记录和缓存。[发布说明](docs/releases/v0.3.5.md)和[验证记录](docs/verification/v0.3.5.md)列出变更与检查范围。
+0.3.6 修复多次快进后视频仍在缓存、白条却停止更新的问题：正确处理旧请求取消、播放器内部预读替换、慢文件信息探测及过期时间采样。用户使用本次修复的测试包在两部约 2 小时长视频上实测，反馈正常。沿用原包名、固定发布证书和磁盘缓存格式，可直接覆盖升级 0.3.1—0.3.5，保留连接、观看记录和缓存。[发布说明](docs/releases/v0.3.6.md)和[验证记录](docs/verification/v0.3.6.md)列出变更与检查范围。
 
 ## 构建与测试
 
 日常更新可以完全通过 GitHub 完成，无需维护本地源码。**Actions → Signed release** 支持构建固定证书签名的 APK，也可选择发布新版本；操作步骤见[通过 GitHub 更新和发布](docs/GITHUB_RELEASE.md)。本机只需妥善保留签名密钥备份。
 
-[0.3.5 云端签名构建已通过](https://github.com/fastchenn/KPlayer/actions/runs/39469199403)：159 项应用和播放器 Release 单元测试、10 项发布工具检查通过，Lint 无错误（8 项警告）；固定证书、关闭调试、原包名、ARM64、v2/v3 签名、16 KB 对齐及发布附件校验通过。
+[白条修复的云端 Android checks 已通过](https://github.com/fastchenn/KPlayer/actions/runs/39742724919)。本机 164 项应用和播放器 Release 单元测试、10 项发布工具检查通过，Lint 无错误（7 项警告）。正式签名构建的固定证书、关闭调试、原包名、ARM64、v2/v3 签名、16 KB 对齐及附件校验结果见 [0.3.6 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.6) 的 `RELEASE-VERIFICATION.txt`。
 
 ### 可选：本地构建
 

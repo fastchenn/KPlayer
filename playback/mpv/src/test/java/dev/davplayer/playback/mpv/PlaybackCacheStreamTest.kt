@@ -699,4 +699,37 @@ class PlaybackCacheStreamTest {
             assertEquals(range, endpoint.cachedTimeline(range, 60000, endpoint.timelineSnapshot()))
         }
     }
+
+    @Test fun cancellingBeforeUpstreamHeadersKeepsTheLoopbackTimelineEligible() {
+        val block = PlaybackDiskCache.BLOCK_BYTES
+        content = ByteArray(block * 3) { (it % 251).toByte() }
+        val original = server.dispatcher
+        val first = java.util.concurrent.atomic.AtomicBoolean(true)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (first.getAndSet(false)) MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.NO_RESPONSE)
+                else original.dispatch(request)
+        }
+        val cache = PlaybackDiskCache(temporary.newFolder())
+        val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val noRetry = consumer.newBuilder().retryOnConnectionFailure(false).build()
+        try { source(cache, request(knownSize = true)).use { endpoint ->
+            val cancelled = worker.submit<Boolean> {
+                try {
+                    noRetry.newCall(Request.Builder().url(endpoint.url).header("Range", "bytes=0-3").build())
+                        .execute().use { it.body!!.bytes() }
+                    false
+                } catch (_: java.io.IOException) { true }
+            }
+            assertEquals("bytes=0-${block - 1}", server.takeRequest(5, TimeUnit.SECONDS)!!.getHeader("Range"))
+            endpoint.prepareSeek()
+            assertTrue("The abandoned response must close instead of starting an uncached fallback", cancelled.get(5, TimeUnit.SECONDS))
+            assertEquals("Cancellation must not fetch the abandoned position again", 1, server.requestCount)
+            assertTrue(endpoint.timelineSnapshot()!!.eligible)
+            val tail = block * 2
+            read(endpoint, "bytes=$tail-${tail + 3}")
+            val ranges = listOf(CachedTimeRange(40_000, 42_000))
+            assertEquals(ranges, endpoint.cachedTimeline(ranges, 60_000))
+        } } finally { worker.shutdownNow(); noRetry.connectionPool.evictAll() }
+    }
 }

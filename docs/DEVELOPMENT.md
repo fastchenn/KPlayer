@@ -17,7 +17,7 @@
 | `.gradle/`、`.kotlin/`、各模块 `build/` | 本机构建缓存和中间结果，不提交 |
 | `.gradle/native-sources/` | 经哈希验证的原生源码下载缓存，可复用 |
 | `.gradle/android-sdk-test/`、`.gradle/android-avd/` | 此工作区的模拟器环境，可复用，不属于发布内容 |
-| `dist/0.3.3/` | 本机整理后的 Release 附件，不提交 Git |
+| `dist/0.3.6/` | 本机整理后的 Release 附件，不提交 Git |
 | `local.properties`、签名私钥 | 本机配置，不提交 |
 
 ## 可选本机构建验证
@@ -58,13 +58,13 @@ adb shell am instrument -w -e class "$testClass#b_reopenHistoryWithoutOpenListAf
 5. 使用 Python 3.11+ 生成对应源码附件：
 
 ```powershell
-python tools/package_native_sources.py --output dist/0.3.3/k-player-0.3.3-native-sources.zip
+python tools/package_native_sources.py --output dist/0.3.6/k-player-0.3.6-native-sources.zip
 ```
 
 6. 对 APK 和源码 ZIP 生成 `SHA256SUMS.txt`，核验 ZIP 内每个原始源码归档与清单哈希一致。
 7. 将源码提交到 GitHub，为对应提交创建版本标签和 Release，上传 APK、原生源码 ZIP 与校验文件。应用源码使用该标签自动生成的 Source code ZIP / tar.gz。
 
-历史发布说明保留，不将失败日志、旧 APK、本机 SDK、Gradle 缓存或签名配置上传到代码仓库。当前版的实际测试结果见 [0.3.3 验证记录](verification/v0.3.3.md)。
+历史发布说明保留，不将失败日志、旧 APK、本机 SDK、Gradle 缓存或签名配置上传到代码仓库。当前版的实际测试结果见 [0.3.6 验证记录](verification/v0.3.6.md)。
 
 ## 本机固定 Release 签名
 
