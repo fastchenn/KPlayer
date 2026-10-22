@@ -80,7 +80,7 @@ internal class CachedMediaReader(
         CacheReadSnapshot(seekEpoch, playbackEpoch, delivered, timelineEligible)
     }
 
-    fun nativeSeek() { playbackEpoch++ }
+    fun nativeSeek() { synchronized(deliveredLock) { playbackEpoch++ } }
 
     fun cachedTimeline(
         observed: List<CachedTimeRange>, durationMs: Long?,
@@ -95,7 +95,7 @@ internal class CachedMediaReader(
             return cache.timeline(media.key, listOf(CachedTimeRange(0, durationMs)),
                 listOf(CachedByteRange(0, media.size)), generation)
         }
-        val current = snapshot.seekEpoch == seekEpoch
+        val current = snapshot.seekEpoch == seekEpoch && snapshot.playbackEpoch == playbackEpoch
         val played = playedCoverage.observe(snapshot.playbackEpoch, sample.takeIf { current && snapshot.eligible })
         if (containerIndexKey != media.key) {
             containerIndexKey = media.key
@@ -137,12 +137,14 @@ internal class CachedMediaReader(
     /** The next open-ended libmpv request supplies the exact container byte offset. */
     fun prepareSeek() {
         synchronized(readAheadLock) {
-            seekEpoch++
-            playbackEpoch++
+            synchronized(deliveredLock) {
+                seekEpoch++
+                playbackEpoch++
+            }
             readAhead?.let { it.scope.cancel(); finishAhead(it) }
             for ((index, block) in downloads) {
                 block.scope.cancel()
-                synchronized(block.monitor) { block.error = IOException("Seek superseded"); block.complete = true; block.monitor.notifyAll() }
+                synchronized(block.monitor) { block.error = ReadSuperseded(); block.complete = true; block.monitor.notifyAll() }
                 downloads.remove(index, block)
             }
             readAheadLock.notifyAll()
@@ -158,10 +160,15 @@ internal class CachedMediaReader(
     }
 
     fun serve(method: String, incoming: Map<String, String>, output: OutputStream): Boolean {
+        // A slow metadata probe still belongs to the request that started it, never
+        // to a newer seek that happened while it was waiting for upstream headers.
+        val epoch = seekEpoch
         if (method !in setOf("GET", "HEAD") || !cache.enabled || incoming.keys.any {
                 it in setOf("if-none-match", "if-modified-since")
             }) return false
-        val meta = probe() ?: return false
+        val meta = probe()
+        if (stopped() || epoch != seekEpoch) return true
+        if (meta == null) return false
         val size = meta.media.size
         val range = parseRange(if (method == "HEAD") null else incoming["range"], size) ?: return false
         if (range.first >= size || range.last < range.first) {
@@ -177,7 +184,6 @@ internal class CachedMediaReader(
             append("\r\n")
         }.toByteArray(Charsets.US_ASCII)
         if (method == "HEAD") { output.write(headers); return true }
-        val epoch = seekEpoch
         // Bounded header/index probes must not redirect the background download.
         val sequential = incoming["range"] == null || incoming["range"]?.matches(Regex("bytes=[0-9]+-")) == true
         val primary = if (sequential) synchronized(readAheadLock) {
@@ -194,18 +200,23 @@ internal class CachedMediaReader(
                 val length = minOf(PlaybackDiskCache.BLOCK_BYTES.toLong(), size - blockStart).toInt()
                 val to = minOf(length.toLong(), range.last - blockStart + 1).toInt()
                 val prefix = cache.readPrefix(meta.media.key, index, length) ?: synchronized(held) { held[index] } ?: ByteArray(0)
+                if (stopped() || epoch != seekEpoch) break
                 if (prefix.size >= to) {
                     if (!headersSent) { output.write(headers); headersSent = true }
                     delivered(position, to - from)
                     output.write(prefix, from, to - from)
                 } else {
-                    val download = download(meta, index, length, prefix)
+                    val download = synchronized(readAheadLock) {
+                        if (stopped() || epoch != seekEpoch) return true
+                        download(meta, index, length, prefix)
+                    }
                     while (from < to && !stopped() && epoch == seekEpoch) {
                         val available = synchronized(download.monitor) {
                             while (download.available <= from && !download.complete && !stopped() && epoch == seekEpoch) download.monitor.wait(250)
                             if (download.available <= from) download.error?.let { throw it }
                             minOf(download.available, to)
                         }
+                        if (stopped() || epoch != seekEpoch) return true
                         if (available <= from) throw IOException("Incomplete media block")
                         if (!headersSent) { output.write(headers); headersSent = true }
                         delivered(blockStart + from, available - from)
@@ -221,12 +232,20 @@ internal class CachedMediaReader(
                     }
                 }
             }
+        } catch (_: ReadSuperseded) {
+            // libmpv can also replace a byte request within the same seek epoch.
+            // Its cancelled predecessor must not enter the uncached fallback.
+            return true
         } catch (error: SourceChanged) {
+            if (stopped() || epoch != seekEpoch) return true
             synchronized(this) { metadata = null; probed = false }
             if (!headersSent) return false
             throw error
         } catch (_: IOException) {
-            if (!headersSent && !stopped()) return false
+            // Cancelling an old seek before headers is normal. Falling back here
+            // would stream the abandoned position and permanently poison the
+            // session's cache timeline through the loopback fallback.
+            if (!headersSent && !stopped() && epoch == seekEpoch) return false
         } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
         return true
     }
@@ -428,7 +447,8 @@ internal class CachedMediaReader(
         run.finished = true
         for ((index, block) in run.owned) {
             synchronized(block.monitor) {
-                block.error = run.failure ?: IOException("Read-ahead stopped")
+                block.error = if (run.scope.cancelled || run.epoch != seekEpoch || stopped()) ReadSuperseded()
+                    else run.failure ?: IOException("Read-ahead stopped")
                 block.complete = true
                 block.monitor.notifyAll()
             }
@@ -530,6 +550,7 @@ internal class CachedMediaReader(
     }
     private class StorageFailure : IOException("Cannot persist read-ahead")
     private class SourceChanged : IOException("Media source changed")
+    private class ReadSuperseded : IOException("Media request superseded")
 
     companion object {
         private val CONTENT_RANGE = Regex("bytes\\s+([0-9]+)-([0-9]+)/([0-9]+)", RegexOption.IGNORE_CASE)
