@@ -2,7 +2,7 @@
 
 ## 日常维护：GitHub
 
-源码维护、测试、签名和发布均可在 GitHub 完成，本机源码无需日常同步，也不需要电脑在线。操作步骤见[通过 GitHub 更新和发布](GITHUB_RELEASE.md)。`Signed release` 已使用 0.3.1 的固定证书完成[云端构建验证](https://github.com/fastchenn/KPlayer/actions/runs/39194464509)，发布工具检查、Release 测试和最终 APK 校验均通过。
+源码维护、测试、签名和发布均可在 GitHub 完成，本机源码无需日常同步，也不需要电脑在线。操作步骤见[通过 GitHub 更新和发布](GITHUB_RELEASE.md)。`Signed release` 已使用 0.3.1 的固定证书完成 [0.3.6 云端签名发布](https://github.com/fastchenn/KPlayer/actions/runs/39746762125)，发布工具检查、Release 测试和最终 APK 校验均通过。
 
 发布新版本时，先在 `main` 提交版本、源码清单与发布说明，再运行 `Signed release` 并勾选发布。只下载签名正式包时，不勾选发布。维护者需要独立备份密钥库、密码和别名。
 

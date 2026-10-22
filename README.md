@@ -48,7 +48,7 @@
 
 日常更新可以完全通过 GitHub 完成，无需维护本地源码。**Actions → Signed release** 支持构建固定证书签名的 APK，也可选择发布新版本；操作步骤见[通过 GitHub 更新和发布](docs/GITHUB_RELEASE.md)。本机只需妥善保留签名密钥备份。
 
-[白条修复的云端 Android checks 已通过](https://github.com/fastchenn/KPlayer/actions/runs/39742724919)。本机 164 项应用和播放器 Release 单元测试、10 项发布工具检查通过，Lint 无错误（7 项警告）。正式签名构建的固定证书、关闭调试、原包名、ARM64、v2/v3 签名、16 KB 对齐及附件校验结果见 [0.3.6 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.6) 的 `RELEASE-VERIFICATION.txt`。
+[0.3.6 云端签名构建已通过](https://github.com/fastchenn/KPlayer/actions/runs/39746762125)：164 项应用和播放器 Release 单元测试、10 项发布工具检查通过，Lint 无错误（8 项警告）；固定证书、关闭调试、原包名、ARM64、v2/v3 签名、16 KB 对齐及发布附件校验通过。具体结果见 [0.3.6 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.6) 的 `RELEASE-VERIFICATION.txt`。
 
 ### 可选：本地构建
 

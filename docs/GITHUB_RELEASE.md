@@ -4,9 +4,9 @@ GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上�
 
 ## 云端验证结果
 
-2026-10-22（Asia/Shanghai），0.3.6 的白条修复已通过 [Android checks 运行 39742724919](https://github.com/fastchenn/KPlayer/actions/runs/39742724919)。本机应用 67 项和播放器 97 项 Release 单元测试（合计 164 项）及 10 项发布工具检查通过；Lint 无错误、7 项警告。用户使用本次修复的测试包在两部约 2 小时长视频上手动实测，反馈正常。Android checks 已编译设备用例；未运行真机或模拟器自动回归。
+2026-10-22（Asia/Shanghai）已完成 [0.3.6 Signed release 签名发布](https://github.com/fastchenn/KPlayer/actions/runs/39746762125)。应用 67 项和播放器 97 项 Release 单元测试（合计 164 项）及 10 项发布工具检查通过；云端 Lint 无错误、8 项警告。APK 的原包名、0.3.6 / 14 版本、关闭调试、固定证书、ARM64、v2/v3 签名和 16 KB 对齐均通过检查。[主分支 Android checks](https://github.com/fastchenn/KPlayer/actions/runs/39746720758) 也已通过并编译设备用例；未运行真机或模拟器自动回归。用户使用本次修复的测试包在两部约 2 小时长视频上手动实测，反馈正常。
 
-当前版本为 0.3.6 / 14，发布页为 [0.3.6 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.6)。`Signed release` 负责构建、固定证书签名、原生源码打包、附件校验和发布。最终检查结果由同页 `RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt` 记录。
+当前版本为 0.3.6 / 14，发布页为 [0.3.6 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.6)。`Signed release` 已完成构建、固定证书签名、原生源码打包、附件校验和发布。最终检查结果由同页 `RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt` 记录。
 
 ## 修改代码
 
