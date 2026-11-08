@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import dev.davplayer.app.BrowserState
 import dev.davplayer.app.data.DemoLibrary
 import dev.davplayer.app.data.MediaEntry
+import dev.davplayer.app.data.sortedByMediaName
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,12 +34,11 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
     var descending by remember { mutableStateOf(false) }
     val folder = browser.url.toHttpUrl().pathSegments.lastOrNull { it.isNotEmpty() }.orEmpty()
     val isRoot = browser.url.trimEnd('/') == browser.server.rootUrl.trimEnd('/')
-    val filtered = remember(browser.entries, filter, query, descending) {
-        browser.entries.filter { (filter == 0 || (filter == 1 && it.isVideo) || (filter == 2 && it.isDirectory)) && it.name.contains(query, ignoreCase = true) }
-            .sortedWith(compareBy<MediaEntry> { !it.isDirectory }.thenComparator { a, b ->
-                val result = a.name.compareTo(b.name, ignoreCase = true)
-                if (descending) -result else result
-            })
+    val sortedEntries = remember(browser.entries, descending) {
+        browser.entries.sortedByMediaName(descending)
+    }
+    val filtered = remember(sortedEntries, filter, query) {
+        sortedEntries.filter { (filter == 0 || (filter == 1 && it.isVideo) || (filter == 2 && it.isDirectory)) && it.name.contains(query, ignoreCase = true) }
     }
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
