@@ -8,7 +8,7 @@
 
 <p align="center">
   <img src="https://cdn.nodeimage.com/i/xxVv6WbJlw39OgjwQseazmR5f9Y6RytI.webp" alt="xxVv6WbJlw39OgjwQseazmR5f9Y6RytI.webp">
-  <img src="https://cdn.nodeimage.com/i/g9ZGXy19mdT4AbEgHY7KX2TDNbszyze2.webp" width="48%" />
+  
 </p>
 <img src="https://cdn.nodeimage.com/i/toAuGJabIevmruhWl1YmA4GLxu1kY8mA.webp" alt="toAuGJabIevmruhWl1YmA4GLxu1kY8mA.webp">
 
