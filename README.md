@@ -12,6 +12,10 @@
 </p>
 <img src="https://cdn.nodeimage.com/i/toAuGJabIevmruhWl1YmA4GLxu1kY8mA.webp" alt="toAuGJabIevmruhWl1YmA4GLxu1kY8mA.webp">
 
+<img src="https://cdn.nodeimage.com/i/52j9u3MOsnW8DJipNLS56x7mNXPskNCS.webp" alt="52j9u3MOsnW8DJipNLS56x7mNXPskNCS.webp">
+
+<img src="https://cdn.nodeimage.com/i/6RHZJWsMGvR9XPe1sBz7DDMM44sy9gTN.webp" alt="6RHZJWsMGvR9XPe1sBz7DDMM44sy9gTN.webp">
+
 ## 下载
 
 从 [0.3.7 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.7) 下载 `k-player-0.3.7-arm64.apk`。同页提供原生组件对应源码、APK 签名信息和 `SHA256SUMS.txt`。
