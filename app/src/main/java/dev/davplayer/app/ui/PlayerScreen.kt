@@ -7,6 +7,7 @@ import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -94,16 +96,17 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
 
     Scaffold(
         containerColor = PlayerBackground,
+        contentColor = Color.White,
         contentWindowInsets = if (fullscreen) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
             if (!fullscreen) TopAppBar(
                 title = {
                     Column {
-                        Text(target.entry.name, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(target.entry.name, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(target.server.name, fontSize = 11.sp, color = MutedColor)
                     }
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回目录") } },
+                navigationIcon = { IconButton(onClick = onBack, colors = playerIconButtonColors()) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回目录") } },
                 actions = { Tag("mpv"); Spacer(Modifier.width(16.dp)) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = PlayerBackground),
             )
@@ -131,7 +134,7 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                     ) {
                         if (!landscape) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(target.entry.name.substringBeforeLast('.'), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Text(target.entry.name.substringBeforeLast('.'), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                 Spacer(Modifier.width(10.dp))
                                 Tag(if (target.server.isDemo) "示例" else "WebDAV", if (target.server.isDemo) WarmColor else MintColor)
                             }
@@ -161,9 +164,9 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                             .padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = ::leaveFullscreen) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "退出全屏") }
-                        Text(target.entry.name, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { boost.stop(); fullscreenPortrait = !fullscreenPortrait; controlsInteraction++ }) {
+                        IconButton(onClick = ::leaveFullscreen, colors = playerIconButtonColors()) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "退出全屏") }
+                        Text(target.entry.name, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { boost.stop(); fullscreenPortrait = !fullscreenPortrait; controlsInteraction++ }, colors = playerIconButtonColors()) {
                             Icon(Icons.Outlined.ScreenRotation, "旋转屏幕方向", Modifier.size(20.dp))
                         }
                         CacheSpeed(state, Modifier.padding(horizontal = 8.dp))
@@ -208,7 +211,7 @@ private fun CacheSpeed(state: PlaybackState, modifier: Modifier = Modifier) {
             if (progress.reachedEnd) append(" · 已到片尾")
         }
     }
-    Text(text, color = MutedColor, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = modifier)
+    Text(text, color = Color.White, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = modifier)
 }
 
 @Composable
@@ -283,6 +286,13 @@ fun PlayerProgress(engine: PlayerEngine, state: PlaybackState, controllable: Boo
     val duration = state.durationMs?.takeIf { it > 0 }
     val positionFraction = if (duration != null) (state.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val trackColor = MaterialTheme.colorScheme.outline
+    val seekEnabled = controllable && engine.capabilities.seek && state.seekable && duration != null
+    val interactionSource = remember { MutableInteractionSource() }
+    val sliderColors = SliderDefaults.colors(
+        thumbColor = MintColor,
+        disabledThumbColor = MintColor.copy(alpha = .38f),
+        inactiveTrackColor = Color.Transparent,
+    )
     Box(Modifier.fillMaxWidth().height(36.dp), contentAlignment = Alignment.Center) {
         Slider(
             value = dragFraction ?: positionFraction,
@@ -292,11 +302,19 @@ fun PlayerProgress(engine: PlayerEngine, state: PlaybackState, controllable: Boo
                 dragFraction = null
                 onSeeking(false)
             },
-            enabled = controllable && engine.capabilities.seek && state.seekable && duration != null,
+            enabled = seekEnabled,
             modifier = Modifier.fillMaxWidth(),
-            colors = SliderDefaults.colors(
-                inactiveTrackColor = Color.Transparent,
-            ),
+            colors = sliderColors,
+            interactionSource = interactionSource,
+            // Only the visual thumb shrinks; Slider retains its accessible touch target.
+            thumb = {
+                SliderDefaults.Thumb(
+                    interactionSource = interactionSource,
+                    colors = sliderColors,
+                    enabled = seekEnabled,
+                    thumbSize = DpSize(3.dp, 20.dp),
+                )
+            },
             track = {
                 Canvas(Modifier.fillMaxWidth().height(6.dp)) {
                     drawRoundRect(color = trackColor,
@@ -354,19 +372,25 @@ fun FullscreenControls(
 }
 
 @Composable
+private fun playerIconButtonColors() = IconButtonDefaults.iconButtonColors(
+    contentColor = MintColor,
+    disabledContentColor = MintColor.copy(alpha = .38f),
+)
+
+@Composable
 private fun PlayerTransport(
     engine: PlayerEngine, state: PlaybackState, controllable: Boolean, compact: Boolean,
     modifier: Modifier = Modifier, onInteraction: () -> Unit = {},
 ) {
     Row(modifier.padding(vertical = if (compact) 0.dp else 8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { onInteraction(); engine.seekTo((state.positionMs - 10_000).coerceAtLeast(0)) }, enabled = controllable && engine.capabilities.seek && state.seekable) { Icon(Icons.Outlined.Replay10, "后退十秒") }
+        IconButton(onClick = { onInteraction(); engine.seekTo((state.positionMs - 10_000).coerceAtLeast(0)) }, enabled = controllable && engine.capabilities.seek && state.seekable, colors = playerIconButtonColors()) { Icon(Icons.Outlined.Replay10, "后退十秒") }
         Spacer(Modifier.width(if (compact) 12.dp else 26.dp))
         val playing = state.phase == PlaybackPhase.PLAYING || state.phase == PlaybackPhase.BUFFERING
         FilledIconButton(onClick = { onInteraction(); if (playing) engine.pause() else engine.play() }, enabled = controllable, modifier = Modifier.size(if (compact) 44.dp else 58.dp)) {
             Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playing) "暂停" else "播放", Modifier.size(30.dp))
         }
         Spacer(Modifier.width(if (compact) 12.dp else 26.dp))
-        IconButton(onClick = { onInteraction(); engine.seekTo(state.positionMs + 10_000) }, enabled = controllable && engine.capabilities.seek && state.seekable) { Icon(Icons.Outlined.Forward10, "前进十秒") }
+        IconButton(onClick = { onInteraction(); engine.seekTo(state.positionMs + 10_000) }, enabled = controllable && engine.capabilities.seek && state.seekable, colors = playerIconButtonColors()) { Icon(Icons.Outlined.Forward10, "前进十秒") }
     }
 }
 
@@ -410,7 +434,7 @@ fun PlayerOptions(
                 }
             }
         }
-        IconButton(onClick = onFullscreen) {
+        IconButton(onClick = onFullscreen, colors = playerIconButtonColors()) {
             Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, if (fullscreen) "退出全屏" else "全屏播放")
         }
     }
@@ -457,7 +481,7 @@ private fun PlayerOptionButtons(
             }
         }
     }
-    IconButton(onClick = onFullscreen, modifier = Modifier.size(44.dp)) {
+    IconButton(onClick = onFullscreen, modifier = Modifier.size(44.dp), colors = playerIconButtonColors()) {
         Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
             if (fullscreen) "退出全屏" else "全屏播放", Modifier.size(22.dp))
     }

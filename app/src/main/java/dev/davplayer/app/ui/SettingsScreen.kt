@@ -69,8 +69,6 @@ fun SettingsScreen(
                 }
                 Tag("首版")
             }
-            HorizontalDivider(color = LineColor, modifier = Modifier.padding(horizontal = 20.dp))
-            Text("后续支持 ExoPlayer，届时可选择默认内核。", fontSize = 12.sp, color = MutedColor, modifier = Modifier.padding(20.dp))
         }
         Spacer(Modifier.height(16.dp)); SectionLabel("播放偏好")
         Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = PanelColor)) {
