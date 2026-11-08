@@ -160,15 +160,12 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                     Row(
                         Modifier.align(Alignment.TopCenter).fillMaxWidth()
                             .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .75f), Color.Transparent)))
-                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
+                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top))
                             .padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(onClick = ::leaveFullscreen, colors = playerIconButtonColors()) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "退出全屏") }
                         Text(target.entry.name, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { boost.stop(); fullscreenPortrait = !fullscreenPortrait; controlsInteraction++ }, colors = playerIconButtonColors()) {
-                            Icon(Icons.Outlined.ScreenRotation, "旋转屏幕方向", Modifier.size(20.dp))
-                        }
                         CacheSpeed(state, Modifier.padding(horizontal = 8.dp))
                     }
                     Column(
@@ -177,10 +174,11 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Bottom))
                             .padding(horizontal = 20.dp, vertical = 8.dp),
                     ) {
-                        PlayerProgress(engine, state, controllable, onSeeking = { seeking = it; controlsInteraction++ })
+                        PlayerProgress(engine, state, controllable, compact = true, onSeeking = { seeking = it; controlsInteraction++ })
                         FullscreenControls(
                             engine, state, controllable,
                             onExit = ::leaveFullscreen,
+                            onRotate = { boost.stop(); fullscreenPortrait = !fullscreenPortrait; controlsInteraction++ },
                             onMenuOpen = { menuOpen = it },
                             onInteraction = { controlsInteraction++ },
                         )
@@ -279,7 +277,10 @@ private fun PlayerVideo(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun PlayerProgress(engine: PlayerEngine, state: PlaybackState, controllable: Boolean, onSeeking: (Boolean) -> Unit) {
+fun PlayerProgress(
+    engine: PlayerEngine, state: PlaybackState, controllable: Boolean,
+    compact: Boolean = false, onSeeking: (Boolean) -> Unit,
+) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     val currentSeeking by rememberUpdatedState(onSeeking)
     DisposableEffect(Unit) { onDispose { currentSeeking(false) } }
@@ -293,7 +294,7 @@ fun PlayerProgress(engine: PlayerEngine, state: PlaybackState, controllable: Boo
         disabledThumbColor = MintColor.copy(alpha = .38f),
         inactiveTrackColor = Color.Transparent,
     )
-    Box(Modifier.fillMaxWidth().height(36.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().height(if (compact) 28.dp else 36.dp), contentAlignment = Alignment.Center) {
         Slider(
             value = dragFraction ?: positionFraction,
             onValueChange = { dragFraction = it; onSeeking(true) },
@@ -350,6 +351,7 @@ fun FullscreenControls(
     state: PlaybackState,
     controllable: Boolean,
     onExit: () -> Unit,
+    onRotate: () -> Unit,
     onMenuOpen: (Boolean) -> Unit,
     onInteraction: () -> Unit = {},
 ) {
@@ -360,7 +362,13 @@ fun FullscreenControls(
                 PlayerOptionButtons(engine, state, controllable, true, onExit, onMenuOpen)
             }
             // Transport is centered in the full viewport, independently of option widths.
-            Box(Modifier.fillMaxWidth().height(52.dp)) {
+            Box(Modifier.fillMaxWidth().height(48.dp)) {
+                IconButton(
+                    onClick = onRotate, modifier = Modifier.align(Alignment.CenterStart).size(48.dp),
+                    colors = playerIconButtonColors(),
+                ) {
+                    Icon(Icons.Outlined.ScreenRotation, "旋转屏幕方向", Modifier.size(20.dp))
+                }
                 PlayerTransport(engine, state, controllable, compact = true,
                     modifier = Modifier.align(Alignment.Center), onInteraction = onInteraction)
                 if (wide) Row(Modifier.align(Alignment.CenterEnd)) {
