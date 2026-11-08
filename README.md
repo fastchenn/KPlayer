@@ -7,10 +7,10 @@
 ## 界面预览
 
 <p align="center">
-  <img src="https://cdn.nodeimage.com/i/iowAeQEaoIBdpuDjvIczvEhCWXUhXiQC.webp" width="48%" />
+  <img src="https://cdn.nodeimage.com/i/xxVv6WbJlw39OgjwQseazmR5f9Y6RytI.webp" alt="xxVv6WbJlw39OgjwQseazmR5f9Y6RytI.webp">
   <img src="https://cdn.nodeimage.com/i/g9ZGXy19mdT4AbEgHY7KX2TDNbszyze2.webp" width="48%" />
 </p>
-<img src="https://cdn.nodeimage.com/i/yG8Oz5wvp3TaP6PUY0fyE6p0WF07j98I.webp" alt="yG8Oz5wvp3TaP6PUY0fyE6p0WF07j98I">
+<img src="https://cdn.nodeimage.com/i/toAuGJabIevmruhWl1YmA4GLxu1kY8mA.webp" alt="toAuGJabIevmruhWl1YmA4GLxu1kY8mA.webp">
 
 ## 下载
 
