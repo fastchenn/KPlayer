@@ -125,7 +125,7 @@ class WebDavRepository(
                     ?: canonical.pathSegments.lastOrNull { it.isNotEmpty() } ?: continue
                 results += MediaEntry(canonical.toString(), name, isDirectory, prop.text("getcontentlength")?.toLongOrNull(), prop.text("getlastmodified"))
             }
-            return results.distinctBy { it.url }.sortedWith(compareBy<MediaEntry> { !it.isDirectory }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            return results.distinctBy { it.url }.sortedByMediaName()
         }
 
         private fun Element.text(name: String): String? = getElementsByTagNameNS(DAV, name).item(0)?.textContent?.trim()

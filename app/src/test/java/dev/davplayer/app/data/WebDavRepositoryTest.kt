@@ -49,6 +49,22 @@ class WebDavRepositoryTest {
         assertEquals("a&b.mkv", entries[2].name)
     }
 
+    @Test fun sortsDecodedDavNamesByPinyinTogetherWithEnglish() {
+        val xml = multistatus(
+            entry("/dav/one/", "<d:collection/>", displayName = "一拳超人"),
+            entry("/dav/Zebra.mkv"),
+            entry("/dav/chong/", "<d:collection/>", displayName = "虫师"),
+            entry("/dav/apple/", "<d:collection/>", displayName = "Apple"),
+            entry("/dav/banana/", "<d:collection/>", displayName = "Banana"),
+            entry("/dav/Apple.mkv"),
+            entry("/dav/chong/", "<d:collection/>", displayName = "虫师"),
+        )
+        assertEquals(
+            listOf("Apple", "Banana", "虫师", "一拳超人", "Apple.mkv", "Zebra.mkv"),
+            WebDavRepository.parseDirectory(xml, root, root).map { it.name },
+        )
+    }
+
     @Test fun skipsFailedPropertiesExternalOriginsAndGrandchildren() {
         val xml = multistatus(
             entry("https://evil.example/dav/private.mkv"),
