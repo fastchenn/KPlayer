@@ -4,9 +4,11 @@ GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上�
 
 ## 云端验证结果
 
-2026-10-22（Asia/Shanghai）已完成 [0.3.6 Signed release 签名发布](https://github.com/fastchenn/KPlayer/actions/runs/39746762125)。应用 67 项和播放器 97 项 Release 单元测试（合计 164 项）及 10 项发布工具检查通过；云端 Lint 无错误、8 项警告。APK 的原包名、0.3.6 / 14 版本、关闭调试、固定证书、ARM64、v2/v3 签名和 16 KB 对齐均通过检查。[主分支 Android checks](https://github.com/fastchenn/KPlayer/actions/runs/39746720758) 也已通过并编译设备用例；未运行真机或模拟器自动回归。用户使用本次修复的测试包在两部约 2 小时长视频上手动实测，反馈正常。
+2026-11-09（Asia/Taipei）已完成 [0.3.7 Signed release 签名发布](https://github.com/fastchenn/KPlayer/actions/runs/42507023669)。应用 76 项、播放器 97 项 Release 单元测试（合计 173 项）及 10 项发布工具检查通过，Lint 无错误、8 项警告。APK 的原包名、0.3.7 / 15、关闭调试、固定证书、ARM64、v2/v3 签名和 16 KB 对齐均通过检查。[主分支 Android checks](https://github.com/fastchenn/KPlayer/actions/runs/42506446565) 也已通过，并编译了两组设备测试 APK；本轮未运行真机或模拟器自动测试。
 
-当前版本为 0.3.6 / 14，发布页为 [0.3.6 Release](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.6)。`Signed release` 已完成构建、固定证书签名、原生源码打包、附件校验和发布。最终检查结果由同页 `RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt` 记录。
+用户已使用测试包手动确认排序、颜色与全屏布局优化并授权发布，此项不计作自动化设备测试。
+
+当前版本为 0.3.7 / 15，发布页为 [K Player 0.3.7](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.7)。正式包沿用 0.3.1 的固定证书，可覆盖升级 0.3.1—0.3.6。测试用调试包使用不同签名，不能直接用正式包覆盖。最终结果由发布附件 `RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt` 记录。
 
 ## 修改代码
 
@@ -22,11 +24,11 @@ GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上�
 
 ## 发布新版本
 
-Release 标题使用产品名加版本号，例如 `K Player 0.3.6`，不添加“正式版”等后缀。`docs/releases/v<版本>.md` 直接以“更新内容”开头，不重复版本标题；发布工作流也会移除说明文件首行的一级标题。
+Release 标题使用产品名加版本号，例如 `K Player 0.3.7`，不添加“正式版”等后缀。`docs/releases/v<版本>.md` 直接以“更新内容”开头，不重复版本标题；发布工作流也会移除说明文件首行的一级标题。
 
-可以直接告诉连接 GitHub 的 AI：“更新 KPlayer，完成后通过 Signed release 发布 0.3.6”。具体步骤为：
+可以直接告诉连接 GitHub 的 AI：“更新 KPlayer，完成后通过 Signed release 发布 0.3.7”。具体步骤为：
 
-1. 在 `app/build.gradle.kts` 更新 `versionName` 和递增的 `versionCode`，例如 0.3.6 / 14。
+1. 在 `app/build.gradle.kts` 更新 `versionName` 和递增的 `versionCode`，例如 0.3.7 / 15。
 2. 同步 `playback/mpv/native-sources.json` 的 `release`、`SOURCES.md`、README 下载链接以及 `docs/releases/v<版本>.md`。整理本次真实验证范围；播放和原生依赖没有变化时不要虚构设备测试。
 3. 提交到 `main`，检查 `Android checks`。
 4. 打开 **Actions → Signed release → Run workflow**，选择 `main`，勾选 **Publish a new version** 后运行。
