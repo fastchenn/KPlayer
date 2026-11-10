@@ -2,10 +2,14 @@ package dev.davplayer.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
@@ -14,8 +18,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,17 +36,19 @@ import dev.davplayer.app.BrowserState
 import dev.davplayer.app.data.DemoLibrary
 import dev.davplayer.app.data.MediaEntry
 import dev.davplayer.app.data.sortedByMediaName
+import dev.davplayer.app.data.browserBreadcrumbs
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Unit, onOpen: (MediaEntry) -> Unit, onHome: () -> Unit) {
+fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Unit, onOpen: (MediaEntry) -> Unit, onHome: () -> Unit, onNavigate: (String) -> Unit) {
     var filter by remember(browser.url) { mutableIntStateOf(0) }
     var searching by remember { mutableStateOf(false) }
     var query by remember(browser.url) { mutableStateOf("") }
     var descending by remember { mutableStateOf(false) }
     val folder = browser.url.toHttpUrl().pathSegments.lastOrNull { it.isNotEmpty() }.orEmpty()
     val isRoot = browser.url.trimEnd('/') == browser.server.rootUrl.trimEnd('/')
+    val breadcrumbs = remember(browser.server.rootUrl, browser.url) { browserBreadcrumbs(browser.server, browser.url) }
     val sortedEntries = remember(browser.entries, descending) {
         browser.entries.sortedByMediaName(descending)
     }
@@ -56,14 +71,44 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
             windowInsets = WindowInsets(0, 0, 0, 0),
             colors = TopAppBarDefaults.topAppBarColors(containerColor = CanvasColor),
         )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onHome, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Outlined.Home, "返回媒体库", Modifier.size(18.dp), tint = MintColor)
-            }
-            Text("  /  ", color = MutedColor, fontSize = 12.sp)
-            Text(if (isRoot) "根目录" else folder, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MutedColor, fontSize = 12.sp)
-            Spacer(Modifier.weight(1f))
-            Tag(if (browser.server.isDemo) "示例" else "WebDAV", if (browser.server.isDemo) WarmColor else MintColor)
+        key(browser.server.id, browser.url) {
+            val pathScroll = rememberScrollState()
+            val threeLines = with(LocalDensity.current) { 66.sp.toDp() }
+            Text(
+                text = buildAnnotatedString {
+                    // A single text layout keeps Home and the path on the same baseline,
+                    // and lets wrapped lines use the full available width.
+                    withLink(LinkAnnotation.Clickable(
+                        tag = "home",
+                        styles = TextLinkStyles(style = SpanStyle(color = MintColor, fontWeight = FontWeight.Medium)),
+                        linkInteractionListener = { onHome() },
+                    )) {
+                        appendInlineContent("homeIcon")
+                        append("\u202F主页")
+                    }
+                    withStyle(SpanStyle(color = Color.White)) { append("  -  ") }
+                    breadcrumbs.forEachIndexed { index, breadcrumb ->
+                        if (index > 0) append("  /  ")
+                        withLink(LinkAnnotation.Clickable(
+                            tag = breadcrumb.url,
+                            styles = TextLinkStyles(style = SpanStyle(color = MintColor)),
+                            linkInteractionListener = { onNavigate(breadcrumb.url) },
+                        )) { append(breadcrumb.name) }
+                    }
+                },
+                color = MutedColor, fontSize = 13.sp, lineHeight = 22.sp,
+                minLines = 3,
+                inlineContent = mapOf(
+                    "homeIcon" to InlineTextContent(
+                        Placeholder(16.sp, 16.sp, PlaceholderVerticalAlign.TextCenter),
+                    ) {
+                        Icon(Icons.Outlined.Home, null, Modifier.fillMaxSize(), tint = MintColor)
+                    },
+                ),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+                    .padding(top = 2.dp, bottom = 4.dp)
+                    .heightIn(max = threeLines).verticalScroll(pathScroll),
+            )
         }
         if (browser.server.isDemo) {
             Text("离线示例 · 文件仅用于界面预览", color = WarmColor, fontSize = 12.sp,
@@ -116,6 +161,6 @@ private fun MediaRow(entry: MediaEntry, onClick: () -> Unit) {
 @Composable
 private fun BrowserPreview() = DavTheme {
     Surface(color = CanvasColor) {
-        BrowserScreen(BrowserState(DemoLibrary.server, DemoLibrary.server.rootUrl, DemoLibrary.list(DemoLibrary.server.rootUrl)), {}, {}, {}, {})
+        BrowserScreen(BrowserState(DemoLibrary.server, DemoLibrary.server.rootUrl, DemoLibrary.list(DemoLibrary.server.rootUrl)), {}, {}, {}, {}, {})
     }
 }
