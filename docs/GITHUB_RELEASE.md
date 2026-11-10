@@ -24,6 +24,14 @@ GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上�
 
 ## 发布新版本
 
+### 开发分支覆盖安装包（不发布）
+
+需要保留正式版的连接、观看记录和缓存进行实机验证时，由仓库所有者在 **Actions → Android checks → Run workflow** 选择已审阅的开发分支，勾选 **Build an installable APK with the fixed certificate, without publishing**。
+
+工作流在 Release 测试、Lint 和编译通过后，使用固定证书签名并核对原包名、版本、ARM64 和 16 KB 对齐，产物为 `k-player-<版本>-signed`。此入口不创建标签或 Release；使用同版本代码可覆盖安装当前正式版，无需重新配置 WebDAV。
+
+### 公开发布
+
 Release 标题使用产品名加版本号，例如 `K Player 0.3.7`，不添加“正式版”等后缀。`docs/releases/v<版本>.md` 直接以“更新内容”开头，不重复版本标题；发布工作流也会移除说明文件首行的一级标题。
 
 可以直接告诉连接 GitHub 的 AI：“更新 KPlayer，完成后通过 Signed release 发布 0.3.7”。具体步骤为：

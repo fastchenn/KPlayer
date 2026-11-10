@@ -2,6 +2,11 @@ name: Android checks
 
 on:
   workflow_dispatch:
+    inputs:
+      sign_test_apk:
+        description: 'Build an installable APK with the fixed certificate, without publishing'
+        type: boolean
+        default: false
   push:
     branches: [main, fix/continuous-cache]
   pull_request:
@@ -33,14 +38,14 @@ jobs:
           path: app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Verify metadata and sign installable APK
         id: signed
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/continuous-cache'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/fix/continuous-cache') || (github.event_name == 'workflow_dispatch' && inputs.sign_test_apk && github.actor == github.repository_owner)
         env:
           KPLAYER_RELEASE_SIGNING: ${{ secrets.KPLAYER_RELEASE_SIGNING }}
         run: |
           python tools/release.py prepare --output "$GITHUB_OUTPUT"
           python tools/release.py sign
       - uses: actions/upload-artifact@v4
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/continuous-cache'
+        if: steps.signed.outcome == 'success'
         with:
           name: ${{ steps.signed.outputs.artifact }}
           path: ${{ steps.signed.outputs.directory }}/*

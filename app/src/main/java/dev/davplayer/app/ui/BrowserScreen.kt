@@ -2,10 +2,14 @@ package dev.davplayer.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
@@ -14,13 +18,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,19 +71,22 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
             windowInsets = WindowInsets(0, 0, 0, 0),
             colors = TopAppBarDefaults.topAppBarColors(containerColor = CanvasColor),
         )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
-            TextButton(
-                onClick = onHome,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
-                colors = ButtonDefaults.textButtonColors(contentColor = MintColor),
-            ) {
-                Icon(Icons.Outlined.Home, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("主页", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            }
-            Spacer(Modifier.width(8.dp))
+        key(browser.server.id, browser.url) {
+            val pathScroll = rememberScrollState()
+            val threeLines = with(LocalDensity.current) { 66.sp.toDp() }
             Text(
                 text = buildAnnotatedString {
+                    // A single text layout keeps Home and the path on the same baseline,
+                    // and lets wrapped lines use the full available width.
+                    withLink(LinkAnnotation.Clickable(
+                        tag = "home",
+                        styles = TextLinkStyles(style = SpanStyle(color = MintColor, fontWeight = FontWeight.Medium)),
+                        linkInteractionListener = { onHome() },
+                    )) {
+                        appendInlineContent("homeIcon")
+                        append("\u202F主页")
+                    }
+                    withStyle(SpanStyle(color = Color.White)) { append("  -  ") }
                     breadcrumbs.forEachIndexed { index, breadcrumb ->
                         if (index > 0) append("  /  ")
                         withLink(LinkAnnotation.Clickable(
@@ -86,8 +97,17 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
                     }
                 },
                 color = MutedColor, fontSize = 13.sp, lineHeight = 22.sp,
-                minLines = 2,
-                modifier = Modifier.weight(1f).padding(vertical = 12.dp),
+                minLines = 3,
+                inlineContent = mapOf(
+                    "homeIcon" to InlineTextContent(
+                        Placeholder(16.sp, 16.sp, PlaceholderVerticalAlign.TextCenter),
+                    ) {
+                        Icon(Icons.Outlined.Home, null, Modifier.fillMaxSize(), tint = MintColor)
+                    },
+                ),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+                    .padding(top = 2.dp, bottom = 4.dp)
+                    .heightIn(max = threeLines).verticalScroll(pathScroll),
             )
         }
         if (browser.server.isDemo) {
