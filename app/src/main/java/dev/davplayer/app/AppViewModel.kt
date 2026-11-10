@@ -156,6 +156,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun openServer(server: ServerConnection) { cancelHistoryOpening(); loadDirectory(server, server.rootUrl) }
     fun refreshDirectory() { state.value.browser?.let { loadDirectory(it.server, it.url) } }
 
+    fun openBreadcrumb(url: String) {
+        val browser = state.value.browser ?: return
+        if (url.trimEnd('/') == browser.url.trimEnd('/')) return
+        if (browserBreadcrumbs(browser.server, browser.url).none { it.url == url }) return
+        loadDirectory(browser.server, url)
+    }
+
     fun openEntry(entry: MediaEntry) {
         val browser = state.value.browser ?: return
         val server = browser.server

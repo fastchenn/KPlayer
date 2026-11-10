@@ -84,7 +84,7 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
         ) { insets ->
             Box(Modifier.fillMaxSize().padding(insets)) {
                 state.browser?.let { browser ->
-                    BrowserScreen(browser, model::back, model::refreshDirectory, model::openEntry, model::leaveBrowser)
+                    BrowserScreen(browser, model::back, model::refreshDirectory, model::openEntry, model::leaveBrowser, model::openBreadcrumb)
                 } ?: when (state.tab) {
                     HomeTab.LIBRARY -> LibraryScreen(
                         state = state,

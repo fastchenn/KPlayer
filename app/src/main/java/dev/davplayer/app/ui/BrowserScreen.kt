@@ -14,8 +14,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,17 +28,19 @@ import dev.davplayer.app.BrowserState
 import dev.davplayer.app.data.DemoLibrary
 import dev.davplayer.app.data.MediaEntry
 import dev.davplayer.app.data.sortedByMediaName
+import dev.davplayer.app.data.browserBreadcrumbs
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Unit, onOpen: (MediaEntry) -> Unit, onHome: () -> Unit) {
+fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Unit, onOpen: (MediaEntry) -> Unit, onHome: () -> Unit, onNavigate: (String) -> Unit) {
     var filter by remember(browser.url) { mutableIntStateOf(0) }
     var searching by remember { mutableStateOf(false) }
     var query by remember(browser.url) { mutableStateOf("") }
     var descending by remember { mutableStateOf(false) }
     val folder = browser.url.toHttpUrl().pathSegments.lastOrNull { it.isNotEmpty() }.orEmpty()
     val isRoot = browser.url.trimEnd('/') == browser.server.rootUrl.trimEnd('/')
+    val breadcrumbs = remember(browser.server.rootUrl, browser.url) { browserBreadcrumbs(browser.server, browser.url) }
     val sortedEntries = remember(browser.entries, descending) {
         browser.entries.sortedByMediaName(descending)
     }
@@ -56,14 +63,32 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
             windowInsets = WindowInsets(0, 0, 0, 0),
             colors = TopAppBarDefaults.topAppBarColors(containerColor = CanvasColor),
         )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onHome, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Outlined.Home, "返回媒体库", Modifier.size(18.dp), tint = MintColor)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
+            TextButton(
+                onClick = onHome,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                colors = ButtonDefaults.textButtonColors(contentColor = MintColor),
+            ) {
+                Icon(Icons.Outlined.Home, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("主页", fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
-            Text("  /  ", color = MutedColor, fontSize = 12.sp)
-            Text(if (isRoot) "根目录" else folder, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MutedColor, fontSize = 12.sp)
-            Spacer(Modifier.weight(1f))
-            Tag(if (browser.server.isDemo) "示例" else "WebDAV", if (browser.server.isDemo) WarmColor else MintColor)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = buildAnnotatedString {
+                    breadcrumbs.forEachIndexed { index, breadcrumb ->
+                        if (index > 0) append("  /  ")
+                        withLink(LinkAnnotation.Clickable(
+                            tag = breadcrumb.url,
+                            styles = TextLinkStyles(style = SpanStyle(color = MintColor)),
+                            linkInteractionListener = { onNavigate(breadcrumb.url) },
+                        )) { append(breadcrumb.name) }
+                    }
+                },
+                color = MutedColor, fontSize = 13.sp, lineHeight = 22.sp,
+                minLines = 2,
+                modifier = Modifier.weight(1f).padding(vertical = 12.dp),
+            )
         }
         if (browser.server.isDemo) {
             Text("离线示例 · 文件仅用于界面预览", color = WarmColor, fontSize = 12.sp,
@@ -116,6 +141,6 @@ private fun MediaRow(entry: MediaEntry, onClick: () -> Unit) {
 @Composable
 private fun BrowserPreview() = DavTheme {
     Surface(color = CanvasColor) {
-        BrowserScreen(BrowserState(DemoLibrary.server, DemoLibrary.server.rootUrl, DemoLibrary.list(DemoLibrary.server.rootUrl)), {}, {}, {}, {})
+        BrowserScreen(BrowserState(DemoLibrary.server, DemoLibrary.server.rootUrl, DemoLibrary.list(DemoLibrary.server.rootUrl)), {}, {}, {}, {}, {})
     }
 }
