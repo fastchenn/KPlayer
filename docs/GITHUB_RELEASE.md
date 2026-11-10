@@ -4,11 +4,11 @@ GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上�
 
 ## 云端验证结果
 
-2026-11-10（Asia/Taipei），本次文件夹导航改动的[发布前 Android checks](https://github.com/fastchenn/KPlayer/actions/runs/42758312272)已通过：应用 82 项、播放器 97 项 Release 单元测试（合计 179 项）及 10 项发布工具检查通过，Lint 0 错误、8 项警告；原包名、固定证书、ARM64、v2/v3 签名和 16 KB 对齐检查通过，Release/Debug 与两组设备测试 APK 编译通过。本轮未运行真机或模拟器自动测试。
+2026-11-10（Asia/Taipei）已完成 [0.3.8 Signed release 签名发布](https://github.com/fastchenn/KPlayer/actions/runs/42760815000)。应用 82 项、播放器 97 项 Release 单元测试（合计 179 项）及 10 项发布工具检查通过，Lint 0 错误、8 项警告。原包名、0.3.8 / 16、关闭调试、固定证书、ARM64、v2/v3 签名、16 KB 对齐及发布附件校验通过。[同提交的主分支 Android checks](https://github.com/fastchenn/KPlayer/actions/runs/42760386864)也已通过，Release/Debug 与两组设备测试 APK 编译通过。本轮未运行真机或模拟器自动测试。
 
 用户已确认文件夹导航布局并授权发布 0.3.8，此项不计作自动化设备测试。
 
-当前源码版本为 0.3.8 / 16，发布页为 [K Player 0.3.8](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.8)。正式包沿用 0.3.1 的固定证书，可覆盖升级 0.3.1—0.3.7，保留 WebDAV 配置、观看记录和缓存。最终结果由发布附件 `RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt` 记录。
+当前版本为 0.3.8 / 16，发布页为 [K Player 0.3.8](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.8)。正式包沿用 0.3.1 的固定证书，可覆盖升级 0.3.1—0.3.7，保留 WebDAV 配置、观看记录和缓存。最终结果由发布附件 `RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt` 记录。
 
 ## 修改代码
 
