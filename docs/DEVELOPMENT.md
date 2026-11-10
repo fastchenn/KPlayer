@@ -31,8 +31,6 @@
 
 默认只包含 ARM64。x86_64 模拟器需给相关命令增加 `'-PmpvAbis=arm64-v8a,x86_64'`；PowerShell 中需保留参数的引号。首次下载完成后可使用 `--offline`。
 
-Debug 包显示为「K Player 测试」，包名为 `dev.davplayer.app.debug`，使用调试签名，可与正式版并存；连接、观看记录和缓存独立，需要在测试版重新添加连接。
-
 连接专用测试设备/模拟器后，可执行 `:playback:mpv:connectedDebugAndroidTest` 和 `:app:connectedDebugAndroidTest`。应用测试会写入测试连接、设置和观看历史，应使用独立测试环境。CI 只构建设备测试 APK，不运行模拟器。
 
 ## 进程重启后的缓存回归
@@ -40,10 +38,10 @@ Debug 包显示为「K Player 测试」，包名为 `dev.davplayer.app.debug`，
 使用相同证书签署应用 APK 和测试 APK，先通过 `adb install -r` 安装。以下为 PowerShell 命令；`adb` 必须指向目标测试设备：
 
 ```powershell
-$runner = 'dev.davplayer.app.debug.test/androidx.test.runner.AndroidJUnitRunner'
+$runner = 'dev.davplayer.app.test/androidx.test.runner.AndroidJUnitRunner'
 $testClass = 'dev.davplayer.app.ui.PersistentPlaybackTest'
 adb shell am instrument -w -e class "$testClass#a_primeCacheThroughOpenListAndPersistHistory" $runner
-adb shell am force-stop dev.davplayer.app.debug
+adb shell am force-stop dev.davplayer.app
 adb shell am instrument -w -e class "$testClass#b_reopenHistoryWithoutOpenListAfterProcessRestart" $runner
 ```
 

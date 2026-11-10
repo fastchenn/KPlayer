@@ -36,10 +36,6 @@ android {
         }
     }
     buildTypes {
-        debug {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
-        }
         release {
             isDebuggable = false
             signingConfig = signingConfigs.findByName("maintainerRelease")
