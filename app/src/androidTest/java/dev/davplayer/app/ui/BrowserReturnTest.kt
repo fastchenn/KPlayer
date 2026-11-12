@@ -1,6 +1,9 @@
 package dev.davplayer.app.ui
 
 import android.graphics.Bitmap
+import android.content.ContentValues
+import android.os.Build
+import android.provider.MediaStore
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
@@ -117,7 +120,7 @@ class BrowserReturnTest {
 
     @Test fun largeTextAndSearchHeaderStillClipPartiallyScrolledRows() = verifyViewport(1.6f)
 
-    private data class HeaderPixels(val width: Int, val height: Int, val pixels: IntArray)
+    private data class HeaderPixels(val width: Int, val top: Int, val height: Int, val pixels: IntArray)
 
     private fun verifyViewport(fontScale: Float) {
         compose.runOnIdle {
@@ -144,6 +147,7 @@ class BrowserReturnTest {
             compose.runOnIdle { model.back() }
             loaded("dav/")
             assertEquals(rowTop, top(row), 1f)
+            compose.mainClock.advanceTimeBy(1_000)
             assertHeaderUnchanged(header, "font-$fontScale-returned")
 
             compose.onNodeWithContentDescription("搜索当前目录").performClick()
@@ -159,6 +163,7 @@ class BrowserReturnTest {
     private fun assertHeaderUnchanged(expected: HeaderPixels, name: String) {
         val actual = captureHeader(name)
         assertEquals(expected.width, actual.width)
+        assertEquals(expected.top, actual.top)
         assertEquals(expected.height, actual.height)
         assertArrayEquals("Rows painted outside the viewport: $name", expected.pixels, actual.pixels)
     }
@@ -167,12 +172,29 @@ class BrowserReturnTest {
         compose.waitForIdle()
         val top = compose.onNodeWithTag("browser-content-viewport").fetchSemanticsNode().boundsInRoot.top
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-        val height = floor(top).toInt().coerceIn(1, bitmap.height)
+        // Navigation buttons may animate when a page is remounted. Compare the fixed
+        // filter/count/divider band that the reported row overlap actually crosses.
+        val bandTop = floor(compose.onNode(hasText("全部") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected))
+            .fetchSemanticsNode().boundsInRoot.top).toInt().coerceAtLeast(0)
+        val bottom = floor(top).toInt().coerceIn(bandTop + 1, bitmap.height)
+        val height = bottom - bandTop
         val pixels = IntArray(bitmap.width * height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, height)
-        val folder = File(compose.activity.getExternalFilesDir(null), "browser-layout").apply { mkdirs() }
-        File(folder, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        return HeaderPixels(bitmap.width, height, pixels)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, bandTop, bitmap.width, height)
+        if (Build.VERSION.SDK_INT >= 29) {
+            // Public test images survive Gradle uninstalling the test target at completion.
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/KPlayerBrowserLayout")
+            }
+            val resolver = compose.activity.contentResolver
+            val uri = checkNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values))
+            checkNotNull(resolver.openOutputStream(uri)).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        } else {
+            val folder = File(compose.activity.getExternalFilesDir(null), "browser-layout").apply { mkdirs() }
+            File(folder, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        return HeaderPixels(bitmap.width, bandTop, height, pixels)
     }
 
     private fun open(origin: DirectoryFixture) {
