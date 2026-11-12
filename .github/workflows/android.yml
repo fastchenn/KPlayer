@@ -8,7 +8,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [main, fix/continuous-cache]
+    branches: [main, fix/continuous-cache, fix/cache-timeline]
   pull_request:
 
 permissions:
@@ -28,6 +28,8 @@ jobs:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
+      - name: Media regression fixture tools
+        run: command -v ffmpeg && command -v ffprobe || (sudo apt-get update && sudo apt-get install -y ffmpeg)
       - name: Release tooling regression checks
         run: python -m unittest discover -s tools -p 'test_release.py' -v
       - name: Release tests, lint and unsigned APK
@@ -38,7 +40,7 @@ jobs:
           path: app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Verify metadata and sign installable APK
         id: signed
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/fix/continuous-cache') || (github.event_name == 'workflow_dispatch' && inputs.sign_test_apk && github.actor == github.repository_owner)
+        if: (github.event_name == 'push' && (github.ref == 'refs/heads/fix/continuous-cache' || github.ref == 'refs/heads/fix/cache-timeline') && github.actor == github.repository_owner) || (github.event_name == 'workflow_dispatch' && inputs.sign_test_apk && github.actor == github.repository_owner)
         env:
           KPLAYER_RELEASE_SIGNING: ${{ secrets.KPLAYER_RELEASE_SIGNING }}
         run: |

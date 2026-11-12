@@ -122,6 +122,39 @@ class PlaybackCacheStreamTest {
         assertEquals(count, server.requestCount)
     }
 
+    @Test fun longVideoIndexKeepsLaterCachedRegionsVisibleAfterCapacityEvictionAndReopen() {
+        for (extension in listOf("mp4", "mkv")) {
+            content = javaClass.getResourceAsStream("/timeline-3h.$extension")!!.readBytes()
+            val block = PlaybackDiskCache.BLOCK_BYTES
+            val directory = temporary.newFolder()
+            val cache = PlaybackDiskCache(directory, maxBytes = block * 3L)
+            val request = PlaybackRequest("long-$extension", server.url("/long.$extension").toString(), "long.$extension",
+                cacheIdentity = "long-$extension", sourceSizeBytes = content.size.toLong())
+            var expected = emptyList<CachedTimeRange>()
+            source(cache, request).use { endpoint ->
+                read(endpoint, "bytes=0-3")
+                runBlocking { withTimeout(8_000) { while (endpoint.cachedTimeline(emptyList(), 10_800_000).isEmpty()) kotlinx.coroutines.delay(20) } }
+                read(endpoint, "bytes=$block-${block + 3}")
+                val before = endpoint.cachedTimeline(emptyList(), 10_800_000)
+                read(endpoint, "bytes=${block * 2}-${block * 2 + 3}")
+                expected = endpoint.cachedTimeline(emptyList(), 10_800_000)
+                assertTrue("$extension lost later data with old dependencies", expected.any { it.endMs > 7_200_000 })
+                assertTrue("$extension must withdraw the actually evicted middle", expected.size > 1)
+                assertNotEquals(before, expected)
+                assertFalse(endpoint.downloadProgress()!!.reachedEnd)
+                assertTrue(cache.usedBytes.value <= block * 3L)
+            }
+            val count = server.requestCount
+            source(PlaybackDiskCache(directory, maxBytes = block * 3L), request).use { reopened ->
+                read(reopened, "bytes=0-3")
+                assertEquals(expected, reopened.cachedTimeline(emptyList(), 10_800_000))
+                val position = block * 2 + 16
+                assertArrayEquals(content.copyOfRange(position, position + 4), read(reopened, "bytes=$position-${position + 3}"))
+            }
+            assertEquals("$extension reopen must stay offline", count, server.requestCount)
+        }
+    }
+
     @Test fun completeFileCanAdvertiseItsWholeDurationAndClearWithdrawsIt() {
         val cache = PlaybackDiskCache(temporary.newFolder())
         source(cache).use { source ->
@@ -587,6 +620,7 @@ class PlaybackCacheStreamTest {
             assertEquals(content.size.toLong() - offset, downloaded.get())
             assertEquals(content.size.toLong() - offset, cache.usedBytes.value)
             assertEquals("bytes=$offset-${content.lastIndex}", server.takeRequest(1, TimeUnit.SECONDS)!!.getHeader("Range"))
+            assertFalse("A cached tail must not claim that the whole file is complete", endpoint.downloadProgress()!!.reachedEnd)
         }
     }
 

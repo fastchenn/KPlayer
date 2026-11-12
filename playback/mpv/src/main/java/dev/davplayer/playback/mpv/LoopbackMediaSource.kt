@@ -72,6 +72,8 @@ internal class LoopbackMediaSource(
 
     fun cachedTimeline(observed: List<CachedTimeRange>, durationMs: Long?, snapshot: CacheReadSnapshot? = null, sample: PlaybackTimelineSample? = null): List<CachedTimeRange> =
         cachedReader?.let { it.cachedTimeline(observed, durationMs, snapshot ?: it.timelineSnapshot(), sample) }.orEmpty()
+    fun timelineState(observed: List<CachedTimeRange>, durationMs: Long?, snapshot: CacheReadSnapshot?, sample: PlaybackTimelineSample?): CachedTimelineState? =
+        cachedReader?.let { it.timelineState(observed, durationMs, snapshot ?: it.timelineSnapshot(), sample) }
     fun timelineSnapshot() = cachedReader?.timelineSnapshot()
     fun nativeSeek() { cachedReader?.nativeSeek() }
 

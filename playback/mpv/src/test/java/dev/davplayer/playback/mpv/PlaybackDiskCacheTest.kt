@@ -123,6 +123,44 @@ class PlaybackDiskCacheTest {
         assertEquals(0L, cache.usedBytes.value)
     }
 
+    @Test fun activeMetadataSurvivesPayloadEvictionAndIsReleasedOnClose() {
+        val block = PlaybackDiskCache.BLOCK_BYTES
+        val cache = PlaybackDiskCache(temporary.newFolder(), maxBytes = block * 4L)
+        val owner = Any()
+        cache.retainMetadata(owner, key, listOf(CachedByteRange(0, 16)))
+        repeat(8) { cache.put(key, it.toLong(), ByteArray(block), cache.generation()) }
+        assertNotNull(cache.readRange(key, 0, 16))
+        assertNull(cache.readRange(key, block.toLong(), 16))
+        assertTrue(cache.usedBytes.value <= block * 4L)
+        cache.releaseMetadata(owner)
+        repeat(4) { cache.put(key, (it + 8).toLong(), ByteArray(block), cache.generation()) }
+        assertNull(cache.readRange(key, 0, 16))
+    }
+
+    @Test fun metadataProtectionIsBoundedAndCapacityChangesCanStillTrimEverything() {
+        val block = PlaybackDiskCache.BLOCK_BYTES
+        val cache = PlaybackDiskCache(temporary.newFolder(), maxBytes = block * 4L)
+        cache.retainMetadata(Any(), key, listOf(CachedByteRange(0, block * 100L)))
+        repeat(8) { cache.put(key, it.toLong(), ByteArray(block), cache.generation()) }
+        assertTrue(cache.usedBytes.value <= block * 4L)
+        assertNotNull(cache.readRange(key, 0, 1))
+        assertNotNull(cache.readRange(key, block.toLong(), 1))
+        assertNull(cache.readRange(key, block * 2L, 1))
+        cache.configure(true, 0)
+        assertEquals(0L, cache.usedBytes.value)
+    }
+
+    @Test fun nextCachedBlockLookupDoesNotTouchLruOrStatUnrelatedFiles() {
+        val cache = PlaybackDiskCache(temporary.newFolder(), maxBytes = 9)
+        cache.put(key, 2, ByteArray(3), cache.generation())
+        cache.put(key, 10, ByteArray(3), cache.generation())
+        assertEquals(PlaybackDiskCache.BLOCK_BYTES * 10L, cache.nextCachedStart(key, PlaybackDiskCache.BLOCK_BYTES * 2L))
+        assertNull(cache.nextCachedStart(key, PlaybackDiskCache.BLOCK_BYTES * 10L))
+        cache.put(key, 11, ByteArray(3), cache.generation())
+        cache.put(key, 12, ByteArray(3), cache.generation())
+        assertNull(cache.read(key, 2, 3))
+    }
+
     @Test fun persistentIndexRequiresPayloadAndDoesNotContainServerCredentials() {
         val directory = temporary.newFolder()
         val cache = PlaybackDiskCache(directory)

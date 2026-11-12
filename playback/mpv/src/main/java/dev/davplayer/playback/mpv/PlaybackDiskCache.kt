@@ -9,10 +9,12 @@ import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.TreeSet
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import dev.davplayer.playback.api.PlaybackRequest
 import dev.davplayer.playback.api.CachedTimeRange
+import dev.davplayer.playback.api.CacheDownloadProgress
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 data class CachedSubtitle(val encodedPath: String, val title: String, val sizeBytes: Long? = null, val modifiedAt: String? = null)
@@ -27,6 +29,8 @@ class PlaybackDiskCache(
     private val lock = Any()
     private data class Entry(val file: File, val size: Long)
     private val entries = LinkedHashMap<String, Entry>(16, .75f, true)
+    private val blocks = mutableMapOf<String, TreeSet<Long>>()
+    private val metadataPins = mutableMapOf<Any, Pair<String, Set<Long>>>()
     private val timelines = mutableMapOf<String, CachedTimeline>()
     private val usage = MutableStateFlow(0L)
     val usedBytes = usage.asStateFlow()
@@ -44,6 +48,7 @@ class PlaybackDiskCache(
         if (this.enabled != enabled || this.maxBytes != maxBytes) epoch++
         this.enabled = enabled
         this.maxBytes = maxBytes.coerceAtLeast(0)
+        metadataPins.clear()
         trimTo(this.maxBytes)
     }
 
@@ -59,6 +64,7 @@ class PlaybackDiskCache(
         entries.values.toList().forEach { if (it.file.exists() && !it.file.delete()) failed = true }
         directory.listFiles().orEmpty().filter { it.name.endsWith(".media") || it.name.endsWith(".ranges") }.forEach { if (!it.delete()) failed = true }
         timelines.clear()
+        metadataPins.clear()
         initialized = false
         initialize()
         if (failed) throw IOException("Some cache files could not be removed")
@@ -71,7 +77,13 @@ class PlaybackDiskCache(
 
     internal fun readAheadBudget(): Long = synchronized(lock) {
         // Leave room for the playing block, metadata probes and a partially written block.
-        (maxBytes - 4L * BLOCK_BYTES).coerceAtLeast(BLOCK_BYTES.toLong())
+        (maxBytes - pinnedNames().size.toLong() * BLOCK_BYTES - 4L * BLOCK_BYTES).coerceAtLeast(BLOCK_BYTES.toLong())
+    }
+
+    /** Indexed lookup: read-ahead must not stat every block of a multi-GB file per block. */
+    internal fun nextCachedStart(key: String, position: Long): Long? = synchronized(lock) {
+        initialize()
+        blocks[key]?.higher(position / BLOCK_BYTES)?.let { it * BLOCK_BYTES }
     }
 
     /** Inspect real lengths without touching LRU recency; a status poll must not keep data alive. */
@@ -87,14 +99,28 @@ class PlaybackDiskCache(
         })
     }
 
-    internal fun timeline(key: String, observed: List<CachedTimeRange>, dependencies: List<CachedByteRange>, generation: Long, indexed: List<CachedTimeProof> = emptyList()): List<CachedTimeRange> = synchronized(lock) {
-        if (!enabled || !key.matches(Regex("[a-f0-9]{64}"))) return emptyList()
+    internal fun timeline(key: String, observed: List<CachedTimeRange>, dependencies: List<CachedByteRange>, generation: Long, indexed: List<CachedTimeProof> = emptyList()): List<CachedTimeRange> =
+        timelineState(key, observed, dependencies, generation, indexed, null).ranges
+
+    /** Publish ranges and completion from ONE locked disk snapshot. */
+    internal fun timelineState(key: String, observed: List<CachedTimeRange>, dependencies: List<CachedByteRange>, generation: Long,
+        indexed: List<CachedTimeProof>, durationMs: Long?): CachedTimelineState = synchronized(lock) {
+        if (!enabled || !key.matches(Regex("[a-f0-9]{64}"))) return CachedTimelineState(emptyList(), CacheDownloadProgress(0, false))
         initialize()
-        timelines.getOrPut(key) { CachedTimeline(File(directory, "$key.ranges")) }
+        val available = byteRanges(key)
+        val mediaSize = readMediaSize(key)
+        val complete = mediaSize != null && coversBytes(available, 0, mediaSize)
+        val fullTime = durationMs?.takeIf { it > 0 && complete && generation == epoch }?.let { CachedTimeRange(0, it) }
+        val ranges = timelines.getOrPut(key) { CachedTimeline(File(directory, "$key.ranges")) }
             .update(if (generation == epoch) observed else emptyList(),
-                if (generation == epoch) dependencies else emptyList(), byteRanges(key),
-                if (generation == epoch) indexed else emptyList())
+                if (generation == epoch) dependencies else emptyList(), available,
+                if (fullTime != null) listOf(CachedTimeProof(fullTime, listOf(CachedByteRange(0, mediaSize!!))))
+                else if (generation == epoch) indexed else emptyList())
+        CachedTimelineState(ranges, CacheDownloadProgress(available.sumOf { it.end - it.start }, complete))
     }
+
+    private val mediaSizes = mutableMapOf<String, Long>()
+    private fun readMediaSize(key: String): Long? = mediaSizes[key]
 
     /** Only actual bytes count as a cache hit. A metadata-only entry is insufficient. */
     fun cachedMedia(identity: String): CachedMediaInfo? = synchronized(lock) {
@@ -124,6 +150,7 @@ class PlaybackDiskCache(
                 if (!key.matches(Regex("[a-f0-9]{64}")) || size <= 0 || count !in 0..64) return null
                 val subtitles = List(count) { CachedSubtitle(input.readUTF(), input.readUTF(), input.readLong().takeIf { it > 0 }, input.readUTF().ifEmpty { null }) }
                 if (subtitles.any { !it.encodedPath.startsWith('/') || it.encodedPath.length > 8192 || it.title.length > 2048 }) return null
+                mediaSizes[key] = size
                 CachedMediaInfo(key, size, version, type, subtitles)
             }
         } catch (_: IOException) { null }
@@ -131,6 +158,7 @@ class PlaybackDiskCache(
 
     internal fun remember(namespace: String, media: CachedMediaInfo, generation: Long): Unit = synchronized(lock) {
         if (!enabled || epoch != generation) return
+        mediaSizes[media.key] = media.size
         var temporary: File? = null
         try {
             initialize()
@@ -148,18 +176,36 @@ class PlaybackDiskCache(
         finally { temporary?.delete() }
     }
 
-    /** Keep the active file's small headers/index usable while evicting old media payload. */
-    internal fun retainMetadata(key: String, ranges: List<CachedByteRange>) = synchronized(lock) {
+    /** Bounded, session-scoped protection; released on close, clear, or capacity changes. */
+    internal fun retainMetadata(owner: Any, key: String, ranges: List<CachedByteRange>) = synchronized(lock) {
         if (!enabled) return
-        for (range in ranges) for (block in range.start / BLOCK_BYTES..(range.end - 1) / BLOCK_BYTES) {
-            entries[blockName(key, block)]?.file?.setLastModified(System.currentTimeMillis())
+        val budget = minOf(maxBytes / 2, 64L * 1024 * 1024) / BLOCK_BYTES
+        val selected = linkedSetOf<Long>()
+        for (range in ranges) {
+            val first = range.start / BLOCK_BYTES
+            val last = (range.end - 1) / BLOCK_BYTES
+            for (block in first..last) {
+                if (selected.size >= budget) break
+                selected.add(block)
+            }
+            if (selected.size >= budget) break
         }
+        metadataPins[owner] = key to selected
     }
+
+    internal fun releaseMetadata(owner: Any) = synchronized(lock) { metadataPins.remove(owner); Unit }
+
+    private fun pinnedNames(): Set<String> = metadataPins.values.flatMap { (key, blocks) -> blocks.map { blockName(key, it) } }.toSet()
 
     /** Metadata inspection never fetches missing bytes or changes LRU recency. */
     internal fun readRange(key: String, position: Long, count: Int): ByteArray? = synchronized(lock) {
         if (!enabled || position < 0 || count !in 1..16_777_216 || position > Long.MAX_VALUE - count) return null
         initialize()
+        val end = position + count
+        for (block in position / BLOCK_BYTES..(end - 1) / BLOCK_BYTES) {
+            val required = minOf(BLOCK_BYTES.toLong(), end - block * BLOCK_BYTES)
+            if ((entries[blockName(key, block)]?.file?.length() ?: 0) < required) return null
+        }
         val result = ByteArray(count)
         var written = 0
         try {
@@ -226,7 +272,7 @@ class PlaybackDiskCache(
                 stream.write(data, offset + overlap, additional)
                 if (file.length() == BLOCK_BYTES.toLong()) stream.fd.sync()
             }
-            entries[name] = Entry(file, file.length())
+            recordBlock(name, Entry(file, file.length()))
             usage.value = (usage.value - old + file.length()).coerceAtLeast(0)
             issue.value = null
             true
@@ -270,7 +316,7 @@ class PlaybackDiskCache(
             temporary = File.createTempFile("block-", ".part", directory)
             temporary.writeBytes(data)
             Files.move(temporary.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            entries[name] = Entry(destination, destination.length())
+            recordBlock(name, Entry(destination, destination.length()))
             usage.value += destination.length()
             issue.value = null
         } catch (_: IOException) {
@@ -281,10 +327,11 @@ class PlaybackDiskCache(
     private fun initialize() {
         if (initialized) return
         entries.clear()
+        blocks.clear()
         val files = directory.listFiles().orEmpty()
         files.filter { it.isFile && it.name.endsWith(".part") }.forEach { it.delete() }
         files.filter { it.isFile && it.name.matches(Regex("[a-f0-9]{64}\\.[0-9]+\\.blk")) }
-            .sortedBy(File::lastModified).forEach { entries[it.name] = Entry(it, it.length()) }
+            .sortedBy(File::lastModified).forEach { recordBlock(it.name, Entry(it, it.length())) }
         val payloadKeys = entries.keys.map { it.substringBefore('.') }.toSet()
         files.filter { it.name.endsWith(".ranges") && it.name.removeSuffix(".ranges") !in payloadKeys }.forEach { it.delete() }
         usage.value = entries.values.sumOf { it.size }
@@ -294,9 +341,10 @@ class PlaybackDiskCache(
 
     private fun trimTo(limit: Long) {
         if (usage.value <= limit) return
+        val pinned = pinnedNames()
         for (name in entries.keys.toList()) {
             if (usage.value <= limit) break
-            remove(name)
+            if (name !in pinned) remove(name)
         }
     }
 
@@ -307,14 +355,19 @@ class PlaybackDiskCache(
             entries.remove(name)
             usage.value = (usage.value - entry.size).coerceAtLeast(0)
             val key = name.substringBefore('.')
+            blocks[key]?.remove(name.substringAfter('.').removeSuffix(".blk").toLong())
             val timelineFile = File(directory, "$key.ranges")
-            if ((key in timelines || timelineFile.exists()) && directory.listFiles().orEmpty().none {
-                    it.name.startsWith("$key.") && it.name.endsWith(".blk") && it.length() > 0
-                }) {
+            if ((key in timelines || timelineFile.exists()) && blocks[key].isNullOrEmpty()) {
                 timelines.remove(key)
                 timelineFile.delete()
             }
         }
+    }
+
+    private fun recordBlock(name: String, entry: Entry) {
+        entries[name] = entry
+        blocks.getOrPut(name.substringBefore('.')) { TreeSet() }
+            .add(name.substringAfter('.').removeSuffix(".blk").toLong())
     }
 
     private fun blockName(key: String, block: Long): String {

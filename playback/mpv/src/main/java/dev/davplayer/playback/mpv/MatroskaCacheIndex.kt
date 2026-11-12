@@ -9,16 +9,18 @@ internal class MatroskaCacheIndex(
     private val fileSize: Long,
     private val readAt: (Long, Int) -> ByteArray?,
     private val onMissing: (Long, Int) -> Unit = { _, _ -> },
-) {
+) : ContainerCacheIndex {
     private data class Element(val id: Long, val start: Long, val data: Long, val end: Long)
     private data class Cue(val position: Long, val ticks: Long)
     private data class Index(val cues: List<Cue>, val scale: Long, val durationMs: Long?, val metadata: List<CachedByteRange>)
     private class Missing : RuntimeException()
     private class Invalid : RuntimeException()
     private var index: Index? = null
+    private var discovered = emptyList<CachedByteRange>()
+    override val ready: Boolean get() = index != null
     private var unsupported = false
 
-    fun proofs(available: List<CachedByteRange>, durationMs: Long?, originMs: Long = 0): List<CachedTimeProof> {
+    override fun proofs(available: List<CachedByteRange>, durationMs: Long?, originMs: Long): List<CachedTimeProof> {
         if (unsupported) return emptyList()
         val current = index ?: try { load().also { index = it } }
         catch (_: Missing) { return emptyList() }
@@ -59,15 +61,16 @@ internal class MatroskaCacheIndex(
         } catch (_: Invalid) { emptyList() }
     }
 
-    fun metadataRanges(): List<CachedByteRange> = index?.metadata.orEmpty()
+    override fun metadataRanges(): List<CachedByteRange> = index?.metadata ?: discovered
 
     private fun load(): Index {
         val dependencies = mutableListOf<CachedByteRange>()
         fun read(position: Long, count: Int): ByteArray {
             if (position < 0 || count <= 0 || position > fileSize - count) throw Invalid()
+            dependencies.add(CachedByteRange(position, position + count))
+            discovered = mergeByteRanges(dependencies)
             val bytes = readAt(position, count) ?: run { onMissing(position, count); throw Missing() }
             if (bytes.size != count) throw Missing()
-            dependencies.add(CachedByteRange(position, position + count))
             return bytes
         }
         fun header(position: Long, limit: Long): Element {

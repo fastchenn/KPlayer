@@ -63,7 +63,7 @@ internal class CachedTimeline(private val file: File) {
     fun update(observed: List<CachedTimeRange>, dependencies: List<CachedByteRange>, available: List<CachedByteRange>, indexed: List<CachedTimeProof> = emptyList()): List<CachedTimeRange> {
         val valid = proofs.filter { covered(it.bytes, available) }.toMutableList()
         val required = mergeByteRanges(dependencies)
-        val observations = indexed + if (required.isNotEmpty()) mergeTimeRanges(observed).map { CachedTimeProof(it, required) } else emptyList()
+        val observations = if (required.isNotEmpty()) mergeTimeRanges(observed).map { CachedTimeProof(it, required) } else emptyList()
         for (observation in observations) {
             if (observation.bytes.isEmpty() || observation.bytes.size > MAX_DEPENDENCIES || !covered(observation.bytes, available)) continue
             // Keep an earlier, smaller proof when a downloaded interval grows.
@@ -83,7 +83,11 @@ internal class CachedTimeline(private val file: File) {
             valid.removeAt(index + 1)
         }
         if (valid != proofs) { proofs = valid; write() }
-        return mergeTimeRanges(valid.map { it.time })
+        // Container coverage is derived afresh from the current disk ranges. Persisting every
+        // growing indexed prefix made a long file accumulate 256 all-history dependencies;
+        // evicting one old block then erased unrelated, still cached parts of the white bar.
+        val currentIndex = indexed.filter { it.bytes.isNotEmpty() && covered(it.bytes, available) }
+        return mergeTimeRanges(valid.map { it.time } + currentIndex.map { it.time })
     }
 
     private fun read(): List<CachedTimeProof> {
@@ -131,7 +135,7 @@ internal class CachedTimeline(private val file: File) {
         private const val MAX_FILE_BYTES = 1_100_000L
 
         private fun covered(required: List<CachedByteRange>, available: List<CachedByteRange>) =
-            required.all { need -> available.any { it.start <= need.start && it.end >= need.end } }
+            required.all { need -> coversBytes(available, need.start, need.end) }
 
         private fun subtract(time: CachedTimeRange, other: CachedTimeRange): List<CachedTimeRange> {
             if (other.endMs <= time.startMs || other.startMs >= time.endMs) return listOf(time)
