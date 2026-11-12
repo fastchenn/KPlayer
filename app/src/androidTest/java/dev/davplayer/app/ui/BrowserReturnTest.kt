@@ -2,6 +2,7 @@ package dev.davplayer.app.ui
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -22,7 +23,7 @@ import kotlin.concurrent.thread
 class BrowserReturnTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val model get() = ViewModelProvider(compose.activity)[AppViewModel::class.java]
-    private val list get() = compose.onNode(hasScrollAction())
+    private val list get() = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
 
     @Test fun folderAndVideoReturnRestoreExactViewportAndControlsWithoutReloading() {
         DirectoryFixture().use { origin ->
