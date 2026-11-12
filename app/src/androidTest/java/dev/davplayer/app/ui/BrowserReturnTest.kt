@@ -6,7 +6,6 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
-import androidx.test.espresso.Espresso.closeSoftKeyboard
 import dev.davplayer.app.AppViewModel
 import dev.davplayer.app.MainActivity
 import dev.davplayer.app.data.ServerConnection
@@ -31,7 +30,7 @@ class BrowserReturnTest {
             val rootId = model.state.value.browser!!.pageId
             compose.onNodeWithContentDescription("搜索当前目录").performClick()
             compose.onNode(hasSetTextAction()).performTextInput("Folder")
-            closeSoftKeyboard()
+            compose.onNode(hasSetTextAction()).performImeAction()
             compose.onNodeWithContentDescription("改为名称降序").performClick()
             scrollTo(30)
             val folder = "Folder 068"
@@ -47,7 +46,7 @@ class BrowserReturnTest {
             compose.onNodeWithText("视频").performClick()
             compose.onNodeWithContentDescription("搜索当前目录").performClick()
             compose.onNode(hasSetTextAction()).performTextInput("Video")
-            closeSoftKeyboard()
+            compose.onNode(hasSetTextAction()).performImeAction()
             scrollTo(20)
             val video = "Video 021.mp4"
             val videoTop = top(video)
