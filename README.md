@@ -52,7 +52,7 @@
 
 日常更新可以完全通过 GitHub 完成，无需维护本地源码。**Actions → Signed release** 支持构建固定证书签名的 APK，也可选择发布新版本；操作步骤见[通过 GitHub 更新和发布](docs/GITHUB_RELEASE.md)。本机只需妥善保留签名密钥备份。
 
-0.3.9 功能提交的[完整构建检查](https://github.com/fastchenn/KPlayer/actions/runs/43160487027)已通过应用 90 项、播放器 111 项 Release 单元测试（共 201 项）、10 项发布工具检查和 Lint（0 错误、9 项提示）。[Android 35 模拟器回归](https://github.com/fastchenn/KPlayer/actions/runs/43160494004)的 6 项测试通过，覆盖目录返回与截图裁剪、三小时合成 MP4/MKV 的暂停缓存、断网定位和重开。真实设备反馈与自动化测试分别记录。0.3.9 / 17 正式签名和发布附件校验结果见[验证记录](docs/verification/v0.3.9.md)与 Release 的 `RELEASE-VERIFICATION.txt`。
+0.3.9 的[正式签名与发布构建](https://github.com/fastchenn/KPlayer/actions/runs/43163244356)已通过应用 90 项、播放器 111 项 Release 单元测试（共 201 项）、10 项发布工具检查和 Lint（0 错误、9 项提示）。发布候选的[Android 35 模拟器回归](https://github.com/fastchenn/KPlayer/actions/runs/43162503309)的 6 项测试通过，覆盖目录返回与截图裁剪、三小时合成 MP4/MKV 的暂停缓存、断网定位和重开。正式 APK 的原签名、0.3.9 / 17、ARM64、关闭调试和 16 KB 对齐均已确认，5 个公开附件的摘要与签名构建产物一致。真实设备反馈与自动化测试分别记录，详见[验证记录](docs/verification/v0.3.9.md)与 Release 的 `RELEASE-VERIFICATION.txt`。
 
 ### 可选：本地构建
 

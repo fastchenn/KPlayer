@@ -8,7 +8,7 @@ GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上�
 
 发布前功能提交的 [Android checks](https://github.com/fastchenn/KPlayer/actions/runs/43160487027)已通过应用 90 项、播放器 111 项 Release 单元测试（共 201 项）、10 项发布工具检查及 Lint（0 错误、9 项提示），Release/Debug 和两组设备测试 APK 编译通过。[Android 35/x86_64 模拟器](https://github.com/fastchenn/KPlayer/actions/runs/43160494004)的 6 项目录与三小时合成长视频缓存回归通过。用户反馈两个实际视频的播放和返回正常，并授权发布 0.3.9；此反馈不替代自动化设备测试。
 
-0.3.9 正式签名和公开附件的最终结果见[验证记录](verification/v0.3.9.md)、`RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt`。
+0.3.9 的[正式签名与发布工作流](https://github.com/fastchenn/KPlayer/actions/runs/43163244356)及[主分支检查](https://github.com/fastchenn/KPlayer/actions/runs/43163244301)均通过。标签固定指向 `b4672bfded1238e1bd5c3d91627cfc5850e4d67b`，正式 APK 使用原证书，5 个公开附件的大小和 SHA-256 与已验证的构建产物一致。完整结果见[验证记录](verification/v0.3.9.md)、`RELEASE-VERIFICATION.txt`、`APK-SIGNATURE.txt` 和 `SHA256SUMS.txt`。
 
 ## 修改代码
 
