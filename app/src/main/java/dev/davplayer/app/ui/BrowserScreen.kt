@@ -6,6 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
@@ -15,6 +16,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,10 +44,11 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Unit, onOpen: (MediaEntry) -> Unit, onHome: () -> Unit, onNavigate: (String) -> Unit) {
-    var filter by remember(browser.url) { mutableIntStateOf(0) }
-    var searching by remember { mutableStateOf(false) }
-    var query by remember(browser.url) { mutableStateOf("") }
-    var descending by remember { mutableStateOf(false) }
+    var filter by rememberSaveable { mutableIntStateOf(0) }
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var descending by rememberSaveable { mutableStateOf(false) }
+    val listState = rememberLazyListState()
     val folder = browser.url.toHttpUrl().pathSegments.lastOrNull { it.isNotEmpty() }.orEmpty()
     val isRoot = browser.url.trimEnd('/') == browser.server.rootUrl.trimEnd('/')
     val breadcrumbs = remember(browser.server.rootUrl, browser.url) { browserBreadcrumbs(browser.server, browser.url) }
@@ -129,7 +132,7 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
                 Button(onClick = onRefresh) { Text("重试") }
             }
             filtered.isEmpty() -> EmptyState(Icons.Outlined.FolderOpen, if (query.isEmpty()) "这里还没有文件" else "没有找到匹配的文件", if (filter == 0) "可以返回上一级，或刷新目录。" else "试试切换到「全部」。")
-            else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
+            else -> LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
                 items(filtered, key = { it.url }) { entry ->
                     MediaRow(entry) { onOpen(entry) }
                 }
