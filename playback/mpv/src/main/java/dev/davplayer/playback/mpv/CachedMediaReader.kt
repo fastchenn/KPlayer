@@ -72,7 +72,7 @@ internal class CachedMediaReader(
 
     @Volatile private var playbackEpoch = 0L
     private val playedCoverage = PlayedTimeCoverage()
-    private var containerIndex: MatroskaCacheIndex? = null
+    private var containerIndex: ContainerCacheIndex? = null
     private var containerIndexKey: String? = null
 
     /** Capture with the native sample, before an IO worker or a seek can change its meaning. */
@@ -82,31 +82,34 @@ internal class CachedMediaReader(
 
     fun nativeSeek() { synchronized(deliveredLock) { playbackEpoch++ } }
 
-    fun cachedTimeline(
+    fun cachedTimeline(observed: List<CachedTimeRange>, durationMs: Long?, snapshot: CacheReadSnapshot = timelineSnapshot(),
+        sample: PlaybackTimelineSample? = null): List<CachedTimeRange> = timelineState(observed, durationMs, snapshot, sample)?.ranges.orEmpty()
+
+    fun timelineState(
         observed: List<CachedTimeRange>, durationMs: Long?,
         snapshot: CacheReadSnapshot = timelineSnapshot(), sample: PlaybackTimelineSample? = null,
-    ): List<CachedTimeRange> {
-        val meta = metadata ?: return emptyList()
+    ): CachedTimelineState? {
+        val meta = metadata ?: return null
         val media = meta.media
-        // Read dependencies before inspecting disk. The opposite order lost observations
-        // whenever downloading/serving advanced during the disk snapshot.
         val available = cache.byteRanges(media.key)
-        if (durationMs != null && durationMs > 0 && available.any { it.start == 0L && it.end >= media.size }) {
-            return cache.timeline(media.key, listOf(CachedTimeRange(0, durationMs)),
-                listOf(CachedByteRange(0, media.size)), generation)
-        }
         val current = snapshot.seekEpoch == seekEpoch && snapshot.playbackEpoch == playbackEpoch
         val played = playedCoverage.observe(snapshot.playbackEpoch, sample.takeIf { current && snapshot.eligible })
         if (containerIndexKey != media.key) {
             containerIndexKey = media.key
-            containerIndex = if (request.title.substringAfterLast('.').lowercase() in setOf("mkv", "webm"))
-                MatroskaCacheIndex(media.size, { position, count -> cache.readRange(media.key, position, count) },
-                    { position, count -> requestIndexBytes(meta, position, count) }) else null
+            val read = { position: Long, count: Int -> cache.readRange(media.key, position, count) }
+            val missing = { position: Long, count: Int -> requestIndexBytes(meta, position, count) }
+            containerIndex = when (request.title.substringAfterLast('.').lowercase(java.util.Locale.ROOT)) {
+                "mkv", "webm" -> MatroskaCacheIndex(media.size, read, missing)
+                "mp4", "m4v", "mov" -> Mp4CacheIndex(media.size, read, missing)
+                else -> null
+            }
         }
-        val indexed = containerIndex?.proofs(available, durationMs, sample?.originMs ?: 0).orEmpty()
-        containerIndex?.let { cache.retainMetadata(media.key, it.metadataRanges()) }
-        return cache.timeline(media.key, if (current && snapshot.eligible) observed + played else emptyList(),
-            if (current && snapshot.eligible) snapshot.bytes else emptyList(), generation, indexed)
+        val complete = coversBytes(available, 0, media.size)
+        val indexed = if (complete && containerIndex?.ready == true) emptyList() else containerIndex?.proofs(available, durationMs, sample?.originMs ?: 0).orEmpty()
+        if (generation == cache.generation()) containerIndex?.let { cache.retainMetadata(this, media.key, it.metadataRanges()) }
+        val fallback = containerIndex?.ready != true && current && snapshot.eligible
+        return cache.timelineState(media.key, if (fallback) observed + played else emptyList(),
+            if (fallback) snapshot.bytes else emptyList(), generation, indexed, durationMs)
     }
 
     private fun requestIndexBytes(meta: Metadata, position: Long, count: Int) {
@@ -125,10 +128,7 @@ internal class CachedMediaReader(
         val media = metadata?.media ?: return null
         if (!cache.enabled || generation != cache.generation()) return null
         val available = cache.byteRanges(media.key)
-        val run = readAhead
-        val start = (run?.position ?: 0L) / PlaybackDiskCache.BLOCK_BYTES * PlaybackDiskCache.BLOCK_BYTES
-        val reachedEnd = run != null && !run.scope.cancelled && run.epoch == seekEpoch && run.reachedEnd &&
-            available.any { it.start <= start && it.end >= media.size }
+        val reachedEnd = coversBytes(available, 0, media.size)
         return CacheDownloadProgress(available.sumOf { it.end - it.start }, reachedEnd)
     }
 
@@ -357,7 +357,7 @@ internal class CachedMediaReader(
                 }
                 val start = index * PlaybackDiskCache.BLOCK_BYTES + block.available
                 // Skip existing cache spans with a new request, rather than download them again.
-                val nextCached = cache.byteRanges(meta.media.key).firstOrNull { it.start > start }?.start
+                val nextCached = cache.nextCachedStart(meta.media.key, start)
                 val end = minOf(meta.media.size, nextCached ?: meta.media.size) - 1
                 val headers = mutableMapOf("range" to "bytes=$start-$end")
                 (meta.etag?.takeUnless { it.startsWith("W/", true) } ?: meta.modified)?.let { headers["if-range"] = it }
@@ -543,6 +543,7 @@ internal class CachedMediaReader(
     private fun stopped() = closed || isClosed()
     override fun close() {
         closed = true
+        cache.releaseMetadata(this)
         downloads.values.forEach { it.scope.cancel() }
         synchronized(readAheadLock) { readAhead?.scope?.cancel(); readAheadLock.notifyAll() }
         readAheadWorker.shutdownNow()

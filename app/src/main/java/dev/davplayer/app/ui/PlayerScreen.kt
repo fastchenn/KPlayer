@@ -206,7 +206,7 @@ private fun CacheSpeed(state: PlaybackState, modifier: Modifier = Modifier) {
         append("缓存速度 ${formatSize(state.networkBytesPerSecond.coerceAtLeast(0))}/s")
         state.cacheProgress?.let { progress ->
             append(" · 已存 ${formatSize(progress.storedBytes)}")
-            if (progress.reachedEnd) append(" · 已到片尾")
+            if (progress.reachedEnd) append(" · 全片已缓存")
         }
     }
     Text(text, color = Color.White, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = modifier)

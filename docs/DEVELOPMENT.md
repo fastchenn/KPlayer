@@ -2,7 +2,7 @@
 
 ## 日常维护：GitHub
 
-源码维护、测试、签名和发布均可在 GitHub 完成，本机源码无需日常同步，也不需要电脑在线。操作步骤见[通过 GitHub 更新和发布](GITHUB_RELEASE.md)。`Signed release` 已使用 0.3.1 的固定证书完成 [0.3.8 云端签名发布](https://github.com/fastchenn/KPlayer/actions/runs/42760815000)，发布工具检查、Release 测试和最终 APK 校验均通过；详情见[验证记录](verification/v0.3.8.md)。
+源码维护、测试、签名和发布均可在 GitHub 完成，本机源码无需日常同步，也不需要电脑在线。操作步骤见[通过 GitHub 更新和发布](GITHUB_RELEASE.md)。`Signed release` 使用 0.3.1 的固定发布证书；当前源码为 0.3.9 / 17，实际验证范围和发布附件校验记录见[0.3.9 验证记录](verification/v0.3.9.md)。
 
 发布新版本时，先在 `main` 提交版本、源码清单与发布说明，再运行 `Signed release` 并勾选发布。只下载签名正式包时，不勾选发布。维护者需要独立备份密钥库、密码和别名。
 
@@ -17,12 +17,12 @@
 | `.gradle/`、`.kotlin/`、各模块 `build/` | 本机构建缓存和中间结果，不提交 |
 | `.gradle/native-sources/` | 经哈希验证的原生源码下载缓存，可复用 |
 | `.gradle/android-sdk-test/`、`.gradle/android-avd/` | 此工作区的模拟器环境，可复用，不属于发布内容 |
-| `dist/0.3.8/` | 本机整理后的 Release 附件，不提交 Git |
+| `dist/0.3.9/` | 本机整理后的 Release 附件，不提交 Git |
 | `local.properties`、签名私钥 | 本机配置，不提交 |
 
 ## 可选本机构建验证
 
-安装 JDK 17、Android SDK 35 和 Build Tools 35.0.0 后运行：
+安装 JDK 17、Android SDK 35、Build Tools 35.0.0 以及 FFmpeg（含 ffprobe）后运行：
 
 ```powershell
 .\gradlew.bat :app:testReleaseUnitTest :playback:mpv:testReleaseUnitTest :app:lintRelease :app:assembleRelease
@@ -31,7 +31,7 @@
 
 默认只包含 ARM64。x86_64 模拟器需给相关命令增加 `'-PmpvAbis=arm64-v8a,x86_64'`；PowerShell 中需保留参数的引号。首次下载完成后可使用 `--offline`。
 
-连接专用测试设备/模拟器后，可执行 `:playback:mpv:connectedDebugAndroidTest` 和 `:app:connectedDebugAndroidTest`。应用测试会写入测试连接、设置和观看历史，应使用独立测试环境。`Android checks` 只构建设备测试 APK，不运行模拟器。PR 的 `Browser navigation regression` 工作流会另外在 Android 35 / x86_64 模拟器上运行 `BrowserReturnTest`，验证目录/视频返回时的列表位置、搜索筛选排序、断网返回、主动刷新和新浏览会话；这不替代播放解码及其他设备回归。
+连接专用测试设备/模拟器后，可执行 `:playback:mpv:connectedDebugAndroidTest` 和 `:app:connectedDebugAndroidTest`。应用测试会写入测试连接、设置和观看历史，应使用独立测试环境。`Android checks` 只构建设备测试 APK，不运行模拟器。播放器回归所需的三小时低帧率 MP4/MKV 及短 VBR/音频样本由 `tools/generate_cache_fixtures.py` 自动生成到模块 build 目录，仅进入测试资源，不进入生产 APK 或 Git。PR 的 `Browser navigation regression` 工作流会另外在 Android 35 / x86_64 模拟器上运行 `BrowserReturnTest`，验证目录/视频返回时的列表位置、搜索筛选排序、断网返回、主动刷新和新浏览会话；同一模拟器工作流还运行 `CacheTimelineDeviceTest`，验证真实三小时 MP4/MKV 的原生解码、暂停期间完整落盘、全白条、断网两小时位置跳转及缓存重开。这不替代真实 NAS、大码率片源、硬件解码和用户设备回归。
 
 ## 进程重启后的缓存回归
 
@@ -58,13 +58,13 @@ adb shell am instrument -w -e class "$testClass#b_reopenHistoryWithoutOpenListAf
 5. 使用 Python 3.11+ 生成对应源码附件：
 
 ```powershell
-python tools/package_native_sources.py --output dist/0.3.8/k-player-0.3.8-native-sources.zip
+python tools/package_native_sources.py --output dist/0.3.9/k-player-0.3.9-native-sources.zip
 ```
 
 6. 对 APK 和源码 ZIP 生成 `SHA256SUMS.txt`，核验 ZIP 内每个原始源码归档与清单哈希一致。
 7. 将源码提交到 GitHub，为对应提交创建版本标签和 Release，上传 APK、原生源码 ZIP 与校验文件。应用源码使用该标签自动生成的 Source code ZIP / tar.gz。
 
-历史发布说明保留，不将失败日志、旧 APK、本机 SDK、Gradle 缓存或签名配置上传到代码仓库。当前版的实际测试结果见 [0.3.8 验证记录](verification/v0.3.8.md)。
+历史发布说明保留，不将失败日志、旧 APK、本机 SDK、Gradle 缓存或签名配置上传到代码仓库。当前版的实际测试结果见 [0.3.9 验证记录](verification/v0.3.9.md)。
 
 ## 本机固定 Release 签名
 

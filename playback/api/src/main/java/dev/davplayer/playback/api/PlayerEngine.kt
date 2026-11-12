@@ -31,6 +31,7 @@ data class PlayerCapabilities(
     val shaders: Boolean = false,
 )
 
+/** reachedEnd is true only while the entire file is present on disk, including its beginning. */
 data class CacheDownloadProgress(val storedBytes: Long, val reachedEnd: Boolean)
 
 data class PlaybackState(

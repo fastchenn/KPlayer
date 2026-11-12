@@ -2,6 +2,19 @@ name: Signed release
 run-name: "Signed release · publish=${{ inputs.publish }}"
 
 on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+        required: true
+      expected_version:
+        type: string
+        default: ''
+        required: false
+    secrets:
+      KPLAYER_RELEASE_SIGNING:
+        required: true
   workflow_dispatch:
     inputs:
       publish:
@@ -35,7 +48,11 @@ jobs:
         id: version
         env:
           PUBLISH: ${{ inputs.publish }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
         run: |
+          if [ -n "$EXPECTED_VERSION" ]; then
+            python -c 'import os; from tools.release import metadata; assert metadata()[0] == os.environ["EXPECTED_VERSION"], "Release version mismatch"'
+          fi
           args=()
           if [ "$PUBLISH" = true ]; then args+=(--publish); fi
           python tools/release.py prepare "${args[@]}" --output "$GITHUB_OUTPUT"
@@ -47,6 +64,8 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Media regression fixture tools
+        run: command -v ffmpeg && command -v ffprobe || (sudo apt-get update && sudo apt-get install -y ffmpeg)
       - name: Release tooling regression checks
         run: python -m unittest discover -s tools -p 'test_release.py' -v
       - name: Release tests, lint and unsigned APK

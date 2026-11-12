@@ -112,3 +112,16 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("junit:junit:4.13.2")
 }
+
+// Keep hours-long synthetic regression media out of Git and production APKs.
+val cacheFixtures = layout.buildDirectory.dir("cache-fixtures")
+val generateCacheFixtures by tasks.registering(Exec::class) {
+    inputs.file(rootProject.file("tools/generate_cache_fixtures.py"))
+    inputs.file(file("src/test/resources/timeline-vbr.mkv"))
+    outputs.dir(cacheFixtures)
+    commandLine("python3", rootProject.file("tools/generate_cache_fixtures.py"), "--output", cacheFixtures.get().asFile)
+}
+android.sourceSets.getByName("test").resources.srcDir(cacheFixtures)
+android.sourceSets.getByName("androidTest").assets.srcDir(cacheFixtures)
+tasks.matching { it.name.matches(Regex("process.*UnitTestJavaRes|merge.*AndroidTestAssets")) }
+    .configureEach { dependsOn(generateCacheFixtures) }

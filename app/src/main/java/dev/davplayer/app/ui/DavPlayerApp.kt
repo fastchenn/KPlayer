@@ -92,8 +92,12 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
         ) { insets ->
             Box(Modifier.fillMaxSize().padding(insets)) {
                 state.browser?.let { browser ->
-                    browserPages.SaveableStateProvider(browser.pageId) {
-                        BrowserScreen(browser, model::back, model::refreshDirectory, model::openEntry, model::leaveBrowser, model::openBreadcrumb)
+                    // Keep saveable values per page without reusing another directory's
+                    // layout/display nodes (including lazy-item clipping layers).
+                    key(browser.pageId) {
+                        browserPages.SaveableStateProvider(browser.pageId) {
+                            BrowserScreen(browser, model::back, model::refreshDirectory, model::openEntry, model::leaveBrowser, model::openBreadcrumb)
+                        }
                     }
                 } ?: when (state.tab) {
                     HomeTab.LIBRARY -> LibraryScreen(

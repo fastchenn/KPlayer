@@ -70,6 +70,21 @@ class MatroskaCacheIndexTest {
         assertEquals(listOf(CachedTimeRange(2000, 4000)), times(parser(scaled)))
     }
 
+    @Test fun threeHourMatroskaUsesLocalClusterCoverageAfterEarlierPayloadIsEvicted() {
+        val bytes = javaClass.getResourceAsStream("/timeline-3h.mkv")!!.readBytes()
+        fun ranges(spans: List<CachedByteRange>): List<CachedTimeRange> {
+            val available = mergeByteRanges(spans)
+            val index = MatroskaCacheIndex(bytes.size.toLong(), { position, count ->
+                if (coversBytes(available, position, position + count)) bytes.copyOfRange(position.toInt(), position.toInt() + count) else null
+            })
+            return index.proofs(available, 10_800_000).map { it.time }
+        }
+        val metadata = listOf(CachedByteRange(0, 4096), CachedByteRange(bytes.size - 65_536L, bytes.size.toLong()))
+        val middle = ranges(metadata + CachedByteRange(bytes.size / 3L, bytes.size * 2L / 3))
+        assertTrue(middle.any { it.startMs >= 3_000_000 && it.endMs > 6_000_000 })
+        assertEquals(listOf(CachedTimeRange(0, 10_800_000)), ranges(listOf(CachedByteRange(0, bytes.size.toLong()))))
+    }
+
     @Test fun invalidOrUnsupportedContainersNeverProduceEstimatedTimeRanges() {
         available = listOf(CachedByteRange(0, content.size.toLong()))
         for (bytes in listOf(ByteArray(content.size), content.copyOf().also { it[44] = 0 }))

@@ -83,6 +83,15 @@ class CachedTimelineTest {
         assertNotNull(cache.read(key, 1, 4))
     }
 
+    @Test fun thousandsOfIndexedIntervalsAreNotDroppedByTheObservationLimit() {
+        val cache = PlaybackDiskCache(temporary.newFolder())
+        cache.put(key, 0, ByteArray(16), cache.generation())
+        val indexed = (0 until 7200).map { second -> CachedTimeProof(
+            CachedTimeRange(second * 2000L, second * 2000L + 1000), listOf(CachedByteRange(0, 16))) }
+        assertEquals(indexed.map { it.time }, cache.timeline(key, emptyList(), emptyList(), cache.generation(), indexed))
+        assertFalse(File(cache.directory(), "$key.ranges").exists())
+    }
+
     @Test fun corruptTimelineIsIgnoredAndClearRemovesItsMetadata() {
         val directory = temporary.newFolder()
         File(directory, "$key.ranges").writeBytes(byteArrayOf(1, 2, 3))
@@ -92,7 +101,7 @@ class CachedTimelineTest {
         assertTrue(directory.listFiles()!!.isEmpty())
     }
 
-    @Test fun indexGrowthAndPlayedCoverageFillFrozenRangesAndPersistAcrossReopen() {
+    @Test fun indexGrowthIsDerivedWhilePlayedObservationsPersistAcrossReopen() {
         val directory = temporary.newFolder()
         val cache = PlaybackDiskCache(directory)
         cache.put(key, 0, ByteArray(16), cache.generation())
@@ -102,7 +111,10 @@ class CachedTimelineTest {
         assertEquals(listOf(CachedTimeRange(0, 6000)), cache.timeline(key,
             listOf(CachedTimeRange(5000, 6000)), listOf(CachedByteRange(0, 16)), cache.generation(), indexed))
         val reopened = PlaybackDiskCache(directory)
-        assertEquals(listOf(CachedTimeRange(0, 6000)), reopened.timeline(key, emptyList(), emptyList(), reopened.generation()))
+        assertEquals(listOf(CachedTimeRange(0, 2000), CachedTimeRange(5000, 6000)),
+            reopened.timeline(key, emptyList(), emptyList(), reopened.generation()))
+        // A real reader rebuilds the container index from cached metadata on reopen.
+        assertEquals(listOf(CachedTimeRange(0, 6000)), reopened.timeline(key, emptyList(), emptyList(), reopened.generation(), indexed))
         File(directory, "$key.0.blk").writeBytes(ByteArray(8))
         assertEquals(initial, reopened.timeline(key, emptyList(), emptyList(), reopened.generation()))
     }
