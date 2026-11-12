@@ -62,7 +62,7 @@ class PlaybackDiskCache(
         epoch++ // An in-flight download cannot put deleted data back after confirmation.
         var failed = false
         entries.values.toList().forEach { if (it.file.exists() && !it.file.delete()) failed = true }
-        directory.listFiles().orEmpty().filter { it.name.endsWith(".media") || it.name.endsWith(".ranges") }.forEach { if (!it.delete()) failed = true }
+        directory.listFiles().orEmpty().filter { it.name.endsWith(".media") || it.name.endsWith(".ranges") || it.name.endsWith(".blk") || it.name.endsWith(".part") }.forEach { if (!it.delete()) failed = true }
         timelines.clear()
         metadataPins.clear()
         mediaSizes.clear()

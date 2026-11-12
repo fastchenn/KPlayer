@@ -88,6 +88,16 @@ class PlaybackDiskCacheTest {
         assertTrue(directory.listFiles()!!.isEmpty())
     }
 
+    @Test fun corruptOverflowingBlockNamesDoNotCrashStartupAndCanStillBeCleared() {
+        val directory = temporary.newFolder()
+        File(directory, "$key.999999999999999999999999999999999.blk").writeBytes(byteArrayOf(1))
+        val cache = PlaybackDiskCache(directory)
+        cache.refreshUsage()
+        assertTrue(cache.byteRanges(key).isEmpty())
+        cache.clear()
+        assertTrue(directory.listFiles()!!.isEmpty())
+    }
+
     @Test fun unwritableCacheDirectoryDoesNotThrowFromPlaybackWrites() {
         val directory = temporary.newFile()
         val cache = PlaybackDiskCache(directory)
