@@ -21,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.LinkAnnotation
@@ -130,7 +132,12 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
         HorizontalDivider(color = LineColor, modifier = Modifier.padding(horizontal = 20.dp))
         // Restored/partially scrolled rows can extend outside their measured bounds.
         // Clip the entire content viewport independently of the lazy list's scroll layer.
-        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().testTag("browser-content-viewport")) {
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().drawWithContent {
+            // Reused display layers can lose their outline clip after state restoration.
+            // Record a canvas clip as well, using this frame's actual viewport dimensions.
+            val content = this
+            clipRect { content.drawContent() }
+        }.testTag("browser-content-viewport")) {
             when {
                 browser.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp) }
                 browser.error != null -> EmptyState(Icons.Outlined.CloudOff, "暂时无法打开目录", browser.error) {
