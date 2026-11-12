@@ -65,6 +65,7 @@ class PlaybackDiskCache(
         directory.listFiles().orEmpty().filter { it.name.endsWith(".media") || it.name.endsWith(".ranges") }.forEach { if (!it.delete()) failed = true }
         timelines.clear()
         metadataPins.clear()
+        mediaSizes.clear()
         initialized = false
         initialize()
         if (failed) throw IOException("Some cache files could not be removed")
@@ -365,9 +366,10 @@ class PlaybackDiskCache(
     }
 
     private fun recordBlock(name: String, entry: Entry) {
+        val block = name.substringAfter('.').removeSuffix(".blk").toLongOrNull() ?: return
+        if (block < 0 || block > (Long.MAX_VALUE - BLOCK_BYTES) / BLOCK_BYTES) return
         entries[name] = entry
-        blocks.getOrPut(name.substringBefore('.')) { TreeSet() }
-            .add(name.substringAfter('.').removeSuffix(".blk").toLong())
+        blocks.getOrPut(name.substringBefore('.')) { TreeSet() }.add(block)
     }
 
     private fun blockName(key: String, block: Long): String {
