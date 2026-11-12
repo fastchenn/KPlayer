@@ -6,6 +6,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import dev.davplayer.app.AppViewModel
 import dev.davplayer.app.MainActivity
 import dev.davplayer.app.data.ServerConnection
@@ -30,7 +33,7 @@ class BrowserReturnTest {
             val rootId = model.state.value.browser!!.pageId
             compose.onNodeWithContentDescription("搜索当前目录").performClick()
             compose.onNode(hasSetTextAction()).performTextInput("Folder")
-            compose.onNode(hasSetTextAction()).performImeAction()
+            hideKeyboard()
             compose.onNodeWithContentDescription("改为名称降序").performClick()
             scrollTo(30)
             val folder = "Folder 068"
@@ -46,7 +49,7 @@ class BrowserReturnTest {
             compose.onNodeWithText("视频").performClick()
             compose.onNodeWithContentDescription("搜索当前目录").performClick()
             compose.onNode(hasSetTextAction()).performTextInput("Video")
-            compose.onNode(hasSetTextAction()).performImeAction()
+            hideKeyboard()
             scrollTo(20)
             val video = "Video 021.mp4"
             val videoTop = top(video)
@@ -111,6 +114,18 @@ class BrowserReturnTest {
     private fun loaded(suffix: String) {
         compose.waitUntil(10_000) {
             model.state.value.browser?.let { !it.loading && it.error == null && it.url.endsWith(suffix) } == true
+        }
+        compose.waitForIdle()
+    }
+
+    private fun hideKeyboard() {
+        compose.runOnIdle {
+            WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView)
+                .hide(WindowInsetsCompat.Type.ime())
+        }
+        compose.waitUntil(5_000) {
+            ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+                ?.isVisible(WindowInsetsCompat.Type.ime()) != true
         }
         compose.waitForIdle()
     }
