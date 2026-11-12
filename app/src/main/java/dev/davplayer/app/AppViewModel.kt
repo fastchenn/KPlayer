@@ -12,6 +12,7 @@ import dev.davplayer.playback.api.PlayerEngine
 import dev.davplayer.playback.mpv.MpvPlayerEngine
 import dev.davplayer.playback.mpv.PlaybackDiskCache
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -28,6 +29,7 @@ data class BrowserState(
     val entries: List<MediaEntry> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
+    val pageId: String = UUID.randomUUID().toString(),
 )
 data class VideoTarget(val server: ServerConnection, val entry: MediaEntry)
 data class AppState(
@@ -82,6 +84,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val messages = Channel<String>(Channel.BUFFERED)
     val notifications = messages.receiveAsFlow()
     private var browsingJob: Job? = null
+    private val browserNavigation = BrowserNavigation()
+    val retainedBrowserPageIds: Set<String>
+        get() = browserNavigation.retainedPageIds + listOfNotNull(state.value.browser?.pageId)
     private var historyOpeningJob: Job? = null
     private var historyLoadingJob: Job? = null
     private val historyStore = WatchHistoryStore(File(application.noBackupFilesDir, "watch-history.bin"))
@@ -153,8 +158,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update { it.copy(tab = tab) }
         if (tab == HomeTab.SETTINGS) applyCacheSettings()
     }
-    fun openServer(server: ServerConnection) { cancelHistoryOpening(); loadDirectory(server, server.rootUrl) }
-    fun refreshDirectory() { state.value.browser?.let { loadDirectory(it.server, it.url) } }
+    fun openServer(server: ServerConnection) {
+        cancelHistoryOpening()
+        browserNavigation.clear()
+        loadDirectory(server, server.rootUrl, newSession = true)
+    }
+    fun refreshDirectory() { state.value.browser?.let { loadDirectory(it.server, it.url, refresh = true) } }
 
     fun openBreadcrumb(url: String) {
         val browser = state.value.browser ?: return
@@ -212,8 +221,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         val browser = state.value.browser ?: return
         if (browser.url.trimEnd('/') == browser.server.rootUrl.trimEnd('/')) {
-            browsingJob?.cancel()
-            mutableState.update { it.copy(browser = null) }
+            leaveBrowser()
         } else {
             val current = browser.url.toHttpUrl()
             val index = current.pathSegments.indexOfLast { it.isNotEmpty() }
@@ -223,6 +231,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun leaveBrowser() {
+        browserNavigation.clear()
         browsingJob?.cancel()
         mutableState.update { it.copy(browser = null) }
     }
@@ -279,7 +288,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (server == null || url == null) { messages.trySend("原连接已移除或修改，无法定位文件夹"); return }
         val parent = url.newBuilder().encodedPath(url.encodedPath.substringBeforeLast('/') + "/").build().toString()
         cancelHistoryOpening()
-        loadDirectory(server, parent)
+        browserNavigation.clear()
+        loadDirectory(server, parent, newSession = true)
     }
 
     fun openHistory(record: WatchRecord) {
@@ -368,14 +378,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun loadDirectory(server: ServerConnection, url: String) {
+    private fun loadDirectory(server: ServerConnection, url: String, refresh: Boolean = false, newSession: Boolean = false) {
         browsingJob?.cancel()
-        mutableState.update { it.copy(browser = BrowserState(server, url, loading = true)) }
+        val current = state.value.browser.takeUnless { newSession }
+        val restored = if (refresh || newSession) null else browserNavigation.navigate(current, server, url)
+        if (restored != null) {
+            mutableState.update { it.copy(browser = restored) }
+            return
+        }
+        // Refresh retains the page identity, including its saved controls and scroll position.
+        val page = if (refresh && current != null) current.copy(loading = true, error = null)
+            else BrowserState(server, url, loading = true)
+        mutableState.update { it.copy(browser = page) }
         browsingJob = viewModelScope.launch {
             try {
                 val listing = repository.list(server, url)
                 ensureActive()
-                mutableState.update { it.copy(browser = BrowserState(server, listing.url, listing.entries)) }
+                mutableState.update { it.copy(browser = page.copy(url = listing.url, entries = listing.entries, loading = false)) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 ensureActive()
@@ -386,7 +405,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     is java.net.SocketTimeoutException -> "连接超时，请检查网络后重试"
                     else -> "无法连接服务器，请检查地址、网络和账号信息"
                 }
-                mutableState.update { it.copy(browser = BrowserState(server, url, error = message)) }
+                mutableState.update { it.copy(browser = page.copy(loading = false, error = message)) }
             }
         }
     }

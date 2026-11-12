@@ -31,7 +31,7 @@
 
 默认只包含 ARM64。x86_64 模拟器需给相关命令增加 `'-PmpvAbis=arm64-v8a,x86_64'`；PowerShell 中需保留参数的引号。首次下载完成后可使用 `--offline`。
 
-连接专用测试设备/模拟器后，可执行 `:playback:mpv:connectedDebugAndroidTest` 和 `:app:connectedDebugAndroidTest`。应用测试会写入测试连接、设置和观看历史，应使用独立测试环境。CI 只构建设备测试 APK，不运行模拟器。
+连接专用测试设备/模拟器后，可执行 `:playback:mpv:connectedDebugAndroidTest` 和 `:app:connectedDebugAndroidTest`。应用测试会写入测试连接、设置和观看历史，应使用独立测试环境。`Android checks` 只构建设备测试 APK，不运行模拟器。PR 的 `Browser navigation regression` 工作流会另外在 Android 35 / x86_64 模拟器上运行 `BrowserReturnTest`，验证目录/视频返回时的列表位置、搜索筛选排序、断网返回、主动刷新和新浏览会话；这不替代播放解码及其他设备回归。
 
 ## 进程重启后的缓存回归
 

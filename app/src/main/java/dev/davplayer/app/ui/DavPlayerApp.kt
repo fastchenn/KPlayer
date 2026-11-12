@@ -7,6 +7,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +27,13 @@ import dev.davplayer.app.data.DemoLibrary
 fun DavPlayerApp(model: AppViewModel = viewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
     val playback by model.engine.state.collectAsStateWithLifecycle()
+    val browserPages = rememberSaveableStateHolder()
+    var retainedPageIds by remember { mutableStateOf(emptySet<String>()) }
+    val activePageIds = model.retainedBrowserPageIds
+    LaunchedEffect(activePageIds) {
+        (retainedPageIds - activePageIds).forEach(browserPages::removeState)
+        retainedPageIds = activePageIds
+    }
     val snackbars = remember { SnackbarHostState() }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -84,7 +92,9 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
         ) { insets ->
             Box(Modifier.fillMaxSize().padding(insets)) {
                 state.browser?.let { browser ->
-                    BrowserScreen(browser, model::back, model::refreshDirectory, model::openEntry, model::leaveBrowser, model::openBreadcrumb)
+                    browserPages.SaveableStateProvider(browser.pageId) {
+                        BrowserScreen(browser, model::back, model::refreshDirectory, model::openEntry, model::leaveBrowser, model::openBreadcrumb)
+                    }
                 } ?: when (state.tab) {
                     HomeTab.LIBRARY -> LibraryScreen(
                         state = state,
