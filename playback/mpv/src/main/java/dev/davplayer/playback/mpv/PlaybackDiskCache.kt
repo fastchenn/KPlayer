@@ -179,7 +179,7 @@ class PlaybackDiskCache(
     /** Bounded, session-scoped protection; released on close, clear, or capacity changes. */
     internal fun retainMetadata(owner: Any, key: String, ranges: List<CachedByteRange>) = synchronized(lock) {
         if (!enabled) return
-        val budget = minOf(maxBytes / 2, 64L * 1024 * 1024) / BLOCK_BYTES
+        val budget = minOf(64L * 1024 * 1024, maxBytes - BLOCK_BYTES, maxOf(maxBytes / 2, 2L * BLOCK_BYTES)).coerceAtLeast(0) / BLOCK_BYTES
         val selected = linkedSetOf<Long>()
         for (range in ranges) {
             val first = range.start / BLOCK_BYTES
@@ -204,7 +204,7 @@ class PlaybackDiskCache(
         val end = position + count
         for (block in position / BLOCK_BYTES..(end - 1) / BLOCK_BYTES) {
             val required = minOf(BLOCK_BYTES.toLong(), end - block * BLOCK_BYTES)
-            if ((entries[blockName(key, block)]?.file?.length() ?: 0) < required) return null
+            if (File(directory, blockName(key, block)).length() < required) return null
         }
         val result = ByteArray(count)
         var written = 0
