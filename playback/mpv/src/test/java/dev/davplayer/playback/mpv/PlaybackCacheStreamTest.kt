@@ -134,11 +134,18 @@ class PlaybackCacheStreamTest {
             source(cache, request).use { endpoint ->
                 read(endpoint, "bytes=0-3")
                 runBlocking { withTimeout(8_000) { while (endpoint.cachedTimeline(emptyList(), 10_800_000).isEmpty()) kotlinx.coroutines.delay(20) } }
+                fun awaitBlock(index: Long) = runBlocking {
+                    val key = cache.cachedMedia("long-$extension")!!.key
+                    val length = minOf(block.toLong(), content.size - index * block).toInt()
+                    withTimeout(8_000) { while (cache.prefixLength(key, index, length) != length) kotlinx.coroutines.delay(10) }
+                }
                 read(endpoint, "bytes=$block-${block + 3}")
+                awaitBlock(1)
                 val before = endpoint.cachedTimeline(emptyList(), 10_800_000)
                 read(endpoint, "bytes=${block * 2}-${block * 2 + 3}")
+                awaitBlock(2)
                 expected = endpoint.cachedTimeline(emptyList(), 10_800_000)
-                assertTrue("$extension lost later data with old dependencies", expected.any { it.endMs > 7_200_000 })
+                assertTrue("$extension lost later data with old dependencies", expected.any { it.startMs in 6_000_000L..9_000_000L && it.endMs > 9_000_000 })
                 assertTrue("$extension must withdraw the actually evicted middle", expected.size > 1)
                 assertNotEquals(before, expected)
                 assertFalse(endpoint.downloadProgress()!!.reachedEnd)
