@@ -1,5 +1,11 @@
 package dev.davplayer.app.ui
 
+import android.graphics.Bitmap
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
@@ -16,6 +22,8 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import java.io.Closeable
+import java.io.File
+import kotlin.math.floor
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.util.concurrent.atomic.AtomicInteger
@@ -105,6 +113,68 @@ class BrowserReturnTest {
         }
     }
 
+    @Test fun partialRowsStayBelowHeaderAndReturnKeepsPosition() = verifyViewport(1f)
+
+    @Test fun largeTextAndSearchHeaderStillClipPartiallyScrolledRows() = verifyViewport(1.6f)
+
+    private data class HeaderPixels(val width: Int, val height: Int, val pixels: IntArray)
+
+    private fun verifyViewport(fontScale: Float) {
+        compose.runOnIdle {
+            val player = model
+            val density = compose.activity.resources.displayMetrics.density
+            compose.activity.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(density, fontScale)) {
+                    DavTheme { DavPlayerApp(player) }
+                }
+            }
+        }
+        DirectoryFixture(longNames = true).use { origin ->
+            open(origin)
+            compose.mainClock.advanceTimeBy(1_000)
+            val header = captureHeader("font-$fontScale-before")
+            list.performScrollToIndex(20)
+            list.performTouchInput { swipe(center, Offset(center.x, center.y - 90f), 1_000) }
+            compose.waitForIdle()
+            val row = "Folder 021 中文长名称用于验证文件夹标题换行与列表绘制边界，返回页面后保持原位置"
+            val rowTop = top(row)
+            assertHeaderUnchanged(header, "font-$fontScale-scrolled")
+            compose.runOnIdle { model.openEntry(model.state.value.browser!!.entries[21]) }
+            loaded("Folder021/")
+            compose.runOnIdle { model.back() }
+            loaded("dav/")
+            assertEquals(rowTop, top(row), 1f)
+            assertHeaderUnchanged(header, "font-$fontScale-returned")
+
+            compose.onNodeWithContentDescription("搜索当前目录").performClick()
+            compose.mainClock.advanceTimeBy(1_000)
+            val expandedHeader = captureHeader("font-$fontScale-search")
+            list.performScrollToIndex(40)
+            list.performTouchInput { swipe(center, Offset(center.x, center.y - 90f), 1_000) }
+            compose.waitForIdle()
+            assertHeaderUnchanged(expandedHeader, "font-$fontScale-search-scrolled")
+        }
+    }
+
+    private fun assertHeaderUnchanged(expected: HeaderPixels, name: String) {
+        val actual = captureHeader(name)
+        assertEquals(expected.width, actual.width)
+        assertEquals(expected.height, actual.height)
+        assertArrayEquals("Rows painted outside the viewport: $name", expected.pixels, actual.pixels)
+    }
+
+    private fun captureHeader(name: String): HeaderPixels {
+        compose.waitForIdle()
+        val top = compose.onNodeWithTag("browser-content-viewport").fetchSemanticsNode().boundsInRoot.top
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        val height = floor(top).toInt().coerceIn(1, bitmap.height)
+        val pixels = IntArray(bitmap.width * height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, height)
+        val folder = File(compose.activity.getExternalFilesDir(null), "browser-layout").apply { mkdirs() }
+        File(folder, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return HeaderPixels(bitmap.width, height, pixels)
+    }
+
     private fun open(origin: DirectoryFixture) {
         compose.waitUntil(10_000) { !model.state.value.initializing && !model.state.value.historyLoading }
         compose.runOnIdle { model.openServer(ServerConnection.create("Browser fixture", origin.root, "", "")) }
@@ -139,7 +209,7 @@ class BrowserReturnTest {
 
     private fun top(label: String): Float = compose.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot.top
 
-    private class DirectoryFixture : Closeable {
+    private class DirectoryFixture(private val longNames: Boolean = false) : Closeable {
         private val socket = ServerSocket(0, 10, InetAddress.getByName("127.0.0.1"))
         val root = "http://127.0.0.1:${socket.localPort}/dav/"
         val requests = AtomicInteger()
@@ -160,7 +230,8 @@ class BrowserReturnTest {
                             repeat(100) { index ->
                                 val number = index.toString().padStart(3, '0')
                                 val directory = path == "/dav/"
-                                val name = if (directory) "Folder $number" else "Video $number.mp4"
+                                val name = if (directory) "Folder $number" + if (longNames) " 中文长名称用于验证文件夹标题换行与列表绘制边界，返回页面后保持原位置" else ""
+                                    else "Video $number.mp4"
                                 val href = path + if (directory) "Folder$number/" else "Video$number.mp4"
                                 append("<d:response><d:href>$href</d:href><d:propstat><d:prop>")
                                 append("<d:displayname>$name</d:displayname><d:resourcetype>")

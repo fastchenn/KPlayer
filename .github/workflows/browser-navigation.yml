@@ -42,7 +42,7 @@ jobs:
           target: google_apis
           disable-animations: true
           script: |
-            ./gradlew :app:connectedDebugAndroidTest -PmpvAbis=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=dev.davplayer.app.ui.BrowserReturnTest --no-daemon
+            ./gradlew :app:connectedDebugAndroidTest -PmpvAbis=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=dev.davplayer.app.ui.BrowserReturnTest --no-daemon; ui_status=$?; adb pull /sdcard/Android/data/dev.davplayer.app/files/browser-layout app/build/outputs/browser-layout-screenshots; test "$ui_status" -eq 0
             ./gradlew :playback:mpv:connectedDebugAndroidTest -PmpvAbis=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=dev.davplayer.playback.mpv.CacheTimelineDeviceTest --no-daemon
       - uses: actions/upload-artifact@v4
         if: always()
@@ -51,5 +51,6 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+            app/build/outputs/browser-layout-screenshots/
             playback/mpv/build/reports/androidTests/
             playback/mpv/build/outputs/androidTest-results/

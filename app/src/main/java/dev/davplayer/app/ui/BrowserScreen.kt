@@ -20,6 +20,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
@@ -126,15 +128,19 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
         }
         Text(if (browser.loading) "正在读取目录…" else "${filtered.size} 个项目", color = MutedColor, fontSize = 11.sp, modifier = Modifier.padding(start = 22.dp, bottom = 10.dp))
         HorizontalDivider(color = LineColor, modifier = Modifier.padding(horizontal = 20.dp))
-        when {
-            browser.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp) }
-            browser.error != null -> EmptyState(Icons.Outlined.CloudOff, "暂时无法打开目录", browser.error) {
-                Button(onClick = onRefresh) { Text("重试") }
-            }
-            filtered.isEmpty() -> EmptyState(Icons.Outlined.FolderOpen, if (query.isEmpty()) "这里还没有文件" else "没有找到匹配的文件", if (filter == 0) "可以返回上一级，或刷新目录。" else "试试切换到「全部」。")
-            else -> LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
-                items(filtered, key = { it.url }) { entry ->
-                    MediaRow(entry) { onOpen(entry) }
+        // Restored/partially scrolled rows can extend outside their measured bounds.
+        // Clip the entire content viewport independently of the lazy list's scroll layer.
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().testTag("browser-content-viewport")) {
+            when {
+                browser.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp) }
+                browser.error != null -> EmptyState(Icons.Outlined.CloudOff, "暂时无法打开目录", browser.error) {
+                    Button(onClick = onRefresh) { Text("重试") }
+                }
+                filtered.isEmpty() -> EmptyState(Icons.Outlined.FolderOpen, if (query.isEmpty()) "这里还没有文件" else "没有找到匹配的文件", if (filter == 0) "可以返回上一级，或刷新目录。" else "试试切换到「全部」。")
+                else -> LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
+                    items(filtered, key = { it.url }) { entry ->
+                        MediaRow(entry) { onOpen(entry) }
+                    }
                 }
             }
         }
