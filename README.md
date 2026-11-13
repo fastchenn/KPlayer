@@ -12,7 +12,7 @@
 </p>
 <img src="https://cdn.nodeimage.com/i/toAuGJabIevmruhWl1YmA4GLxu1kY8mA.webp" alt="toAuGJabIevmruhWl1YmA4GLxu1kY8mA.webp">
 
-<img src="https://cdn.nodeimage.com/i/52j9u3MOsnW8DJipNLS56x7mNXPskNCS.webp" alt="52j9u3MOsnW8DJipNLS56x7mNXPskNCS.webp">
+<img src="https://cdn.nodeimage.com/i/UE3zxDCM7UDdqNq5Ose5H4gSXiMlmAzb.webp" alt="UE3zxDCM7UDdqNq5Ose5H4gSXiMlmAzb">
 
 <img src="https://cdn.nodeimage.com/i/6RHZJWsMGvR9XPe1sBz7DDMM44sy9gTN.webp" alt="6RHZJWsMGvR9XPe1sBz7DDMM44sy9gTN.webp">
 
