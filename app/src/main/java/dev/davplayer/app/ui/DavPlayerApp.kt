@@ -1,14 +1,20 @@
 package dev.davplayer.app.ui
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,6 +42,8 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
     }
     val snackbars = remember { SnackbarHostState() }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    val backdrop = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) rememberGraphicsLayer() else null
+    var backdropOrigin by remember { mutableStateOf(Offset.Zero) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(model) { model.notifications.collect { snackbars.showSnackbar(it) } }
@@ -59,6 +67,7 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
         )
         state.video != null -> PlayerScreen(
             target = state.video!!, engine = model.engine, state = playback, onBack = model::back,
+            onLoadEpisodeDirectory = model::loadEpisodeDirectory, onSelectEpisode = model::selectEpisode,
         )
         else -> Scaffold(
             containerColor = CanvasColor,
@@ -71,26 +80,26 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
                 )
             },
             bottomBar = {
-                if (state.browser == null) NavigationBar(containerColor = CanvasColor, tonalElevation = 0.dp) {
-                    listOf(
-                        Triple(HomeTab.LIBRARY, Icons.Outlined.VideoLibrary, "媒体库"),
-                        Triple(HomeTab.RECENT, Icons.Outlined.History, "最近"),
-                        Triple(HomeTab.SETTINGS, Icons.Outlined.Tune, "设置"),
-                    ).forEach { (tab, icon, label) ->
-                        NavigationBarItem(
-                            selected = state.tab == tab, onClick = { model.setTab(tab) },
-                            icon = { Icon(icon, label) }, label = { Text(label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MintColor, selectedTextColor = MintColor,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .6f),
-                                unselectedIconColor = MutedColor, unselectedTextColor = MutedColor,
-                            ),
-                        )
-                    }
+                if (state.browser == null) {
+                    FloatingNavigationBar(state.tab, model::setTab, backdrop) { backdropOrigin }
                 }
             },
         ) { insets ->
-            Box(Modifier.fillMaxSize().padding(insets)) {
+            val home = state.browser == null
+            val direction = LocalLayoutDirection.current
+            val contentInsets = if (home) PaddingValues(
+                start = insets.calculateStartPadding(direction), top = insets.calculateTopPadding(),
+                end = insets.calculateEndPadding(direction),
+            ) else insets
+            val navigationPadding = insets.calculateBottomPadding()
+            val recordBackdrop = if (home && backdrop != null) Modifier
+                .onGloballyPositioned { backdropOrigin = it.positionInRoot() }
+                .drawWithContent {
+                    backdrop.record { this@drawWithContent.drawContent() }
+                    drawLayer(backdrop)
+                }
+            else Modifier
+            Box(Modifier.fillMaxSize().padding(contentInsets).then(recordBackdrop)) {
                 state.browser?.let { browser ->
                     // Keep saveable values per page without reusing another directory's
                     // layout/display nodes (including lazy-item clipping layers).
@@ -108,12 +117,14 @@ fun DavPlayerApp(model: AppViewModel = viewModel()) {
                         onOpen = model::openServer,
                         onDemo = { model.openServer(DemoLibrary.server) },
                         onRetry = model::reloadConnections,
+                        bottomPadding = navigationPadding,
                     )
-                    HomeTab.RECENT -> RecentScreen(state, model::openHistory, model::locateHistoryFolder, model::removeHistory, model::clearHistory, model::reloadHistory, model::retryHistorySave)
+                    HomeTab.RECENT -> RecentScreen(state, model::openHistory, model::locateHistoryFolder,
+                        model::removeHistory, model::clearHistory, model::reloadHistory, model::retryHistorySave, navigationPadding)
                     HomeTab.SETTINGS -> SettingsScreen(
                         state, model::setPreferHardware, model::setRememberPosition,
                         model::setPlaybackCacheEnabled, model::setPlaybackCacheSizeGb, model::clearPlaybackCache,
-                        model::setLibraryText,
+                        model::setLibraryText, navigationPadding,
                     )
                 }
             }

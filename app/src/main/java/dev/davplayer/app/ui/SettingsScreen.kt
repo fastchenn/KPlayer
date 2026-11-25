@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.davplayer.app.AppState
@@ -31,6 +32,7 @@ fun SettingsScreen(
     state: AppState, onHardware: (Boolean) -> Unit, onRemember: (Boolean) -> Unit,
     onCacheEnabled: (Boolean) -> Unit, onCacheSizeGb: (Int) -> Unit, onClearCache: () -> Unit,
     onLibraryTextSave: suspend (LibraryText) -> Unit,
+    bottomPadding: Dp = 0.dp,
 ) {
     var showLicenses by remember { mutableStateOf(false) }
     var cacheSizeMenu by remember { mutableStateOf(false) }
@@ -155,7 +157,7 @@ fun SettingsScreen(
             }
             TextButton(onClick = { showLicenses = true }, modifier = Modifier.padding(horizontal = 10.dp)) { Text("开源组件与许可") }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp + bottomPadding))
     }
 }
 

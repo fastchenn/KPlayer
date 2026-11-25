@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,7 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,14 +48,21 @@ private val PlayerBackground = Color(0xFF080D0B)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState, onBack: () -> Unit) {
+fun PlayerScreen(
+    target: VideoTarget,
+    engine: PlayerEngine,
+    state: PlaybackState,
+    onBack: () -> Unit,
+    onLoadEpisodeDirectory: suspend (VideoTarget) -> Unit,
+    onSelectEpisode: (String) -> Unit,
+) {
     val ready = engine.availability is EngineAvailability.Available && !target.server.isDemo
     val controllable = ready && state.phase in setOf(PlaybackPhase.PLAYING, PlaybackPhase.PAUSED, PlaybackPhase.BUFFERING, PlaybackPhase.ENDED)
-    var fullscreen by rememberSaveable(target.entry.url) { mutableStateOf(false) }
-    var fullscreenPortrait by rememberSaveable(target.entry.url) { mutableStateOf(false) }
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
     var controlsVisible by remember(target.entry.url) { mutableStateOf(true) }
     var controlsInteraction by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
+    var episodesOpen by rememberSaveable { mutableStateOf(false) }
     var seeking by remember { mutableStateOf(false) }
     val boost = remember(engine, target.entry.url) { HoldToDoubleSpeed(engine) }
     val swipe = remember(engine, target.entry.url) { SwipeToSeek(engine) }
@@ -63,7 +74,7 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
     val playing = state.phase == PlaybackPhase.PLAYING || state.phase == PlaybackPhase.BUFFERING
     val canSwipeSeek = controllable && engine.capabilities.seek && state.seekable && (state.durationMs ?: 0) > 0
 
-    PlayerWindowMode(fullscreen, fullscreenPortrait)
+    PlayerWindowMode(fullscreen)
     DisposableEffect(boost, swipe, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             gesturesEnabled = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
@@ -79,8 +90,8 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
             swipe.cancel()
         }
     }
-    LaunchedEffect(fullscreen, controlsVisible, controlsInteraction, menuOpen, seeking, boost.active, seekPreview != null, playing) {
-        if (fullscreen && controlsVisible && playing && !menuOpen && !seeking && !boost.active && seekPreview == null) {
+    LaunchedEffect(fullscreen, controlsVisible, controlsInteraction, menuOpen, episodesOpen, seeking, boost.active, seekPreview != null, playing) {
+        if (fullscreen && controlsVisible && playing && !menuOpen && !episodesOpen && !seeking && !boost.active && seekPreview == null) {
             delay(4_000)
             controlsVisible = false
         }
@@ -92,7 +103,22 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
         controlsVisible = true
         menuOpen = false
     }
+    fun closeEpisodes() {
+        episodesOpen = false
+        controlsInteraction++
+    }
     BackHandler(fullscreen) { leaveFullscreen() }
+
+    if (episodesOpen) EpisodePicker(
+        target = target,
+        fullscreen = fullscreen,
+        onLoadDirectory = onLoadEpisodeDirectory,
+        onDismiss = ::closeEpisodes,
+        onSelect = { entry ->
+            closeEpisodes()
+            onSelectEpisode(entry.url)
+        },
+    )
 
     Scaffold(
         containerColor = PlayerBackground,
@@ -114,6 +140,7 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
     ) { insets ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(insets)) {
             val landscape = maxWidth > maxHeight
+            val panelPadding = if (maxWidth < 360.dp) 12.dp else 24.dp
             // Keep the Surface at the same composition position when changing screen modes.
             Column(Modifier.fillMaxSize()) {
                 PlayerVideo(
@@ -130,7 +157,7 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                     Column(
                         Modifier.fillMaxWidth()
                             .background(PanelColor, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                            .padding(horizontal = 24.dp, vertical = if (landscape) 8.dp else 22.dp),
+                            .padding(horizontal = panelPadding, vertical = if (landscape) 8.dp else 22.dp),
                     ) {
                         if (!landscape) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -146,17 +173,20 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                         CacheSpeed(state, Modifier.padding(top = 4.dp))
                         PlayerTransport(engine, state, controllable, compact = landscape, modifier = Modifier.fillMaxWidth())
                         if (!landscape) HorizontalDivider(color = LineColor)
-                        PlayerOptions(
-                            engine, state, controllable, fullscreen = false,
-                            onFullscreen = { fullscreenPortrait = false; fullscreen = true; controlsVisible = true },
-                            onMenuOpen = { menuOpen = it },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            PlayerMediaOptions(engine, state, controllable, onMenuOpen = { menuOpen = it },
+                                modifier = Modifier.weight(1f))
+                            PlayerViewButtons(fullscreen = false, onEpisodes = { episodesOpen = true },
+                                onFullscreen = { fullscreen = true; controlsVisible = true })
+                        }
                     }
                 }
             }
             if (fullscreen) {
                 if (controlsVisible && !boost.active && seekPreview == null) {
+                    val cutout = WindowInsets.displayCutout.asPaddingValues()
+                    val direction = LocalLayoutDirection.current
+                    val sidePadding = 20.dp + maxOf(cutout.calculateLeftPadding(direction), cutout.calculateRightPadding(direction))
                     Row(
                         Modifier.align(Alignment.TopCenter).fillMaxWidth()
                             .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .75f), Color.Transparent)))
@@ -172,13 +202,13 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                         Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f))))
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Bottom))
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                            .padding(horizontal = sidePadding, vertical = 8.dp),
                     ) {
                         PlayerProgress(engine, state, controllable, compact = true, onSeeking = { seeking = it; controlsInteraction++ })
                         FullscreenControls(
                             engine, state, controllable,
                             onExit = ::leaveFullscreen,
-                            onRotate = { boost.stop(); fullscreenPortrait = !fullscreenPortrait; controlsInteraction++ },
+                            onEpisodes = { episodesOpen = true },
                             onMenuOpen = { menuOpen = it },
                             onInteraction = { controlsInteraction++ },
                         )
@@ -346,34 +376,36 @@ fun PlayerProgress(
 }
 
 @Composable
-fun FullscreenControls(
+private fun FullscreenControls(
     engine: PlayerEngine,
     state: PlaybackState,
     controllable: Boolean,
     onExit: () -> Unit,
-    onRotate: () -> Unit,
+    onEpisodes: () -> Unit,
     onMenuOpen: (Boolean) -> Unit,
     onInteraction: () -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val wide = maxWidth >= 760.dp
+        val mediaWidth = 228.dp
+        val singleRow = maxWidth >= 640.dp
+        val splitMediaWidth = minOf(mediaWidth, (maxWidth - 96.dp).coerceAtLeast(0.dp))
         Column(Modifier.fillMaxWidth()) {
-            if (!wide) Row(Modifier.align(Alignment.End)) {
-                PlayerOptionButtons(engine, state, controllable, true, onExit, onMenuOpen)
+            if (!singleRow) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                PlayerMediaOptions(engine, state, controllable, onMenuOpen,
+                    Modifier.width(splitMediaWidth))
+                PlayerViewButtons(fullscreen = true, onEpisodes = onEpisodes, onFullscreen = onExit)
             }
             // Transport is centered in the full viewport, independently of option widths.
             Box(Modifier.fillMaxWidth().height(48.dp)) {
-                IconButton(
-                    onClick = onRotate, modifier = Modifier.align(Alignment.CenterStart).size(48.dp),
-                    colors = playerIconButtonColors(),
-                ) {
-                    Icon(Icons.Outlined.ScreenRotation, "旋转屏幕方向", Modifier.size(20.dp))
+                if (singleRow) {
+                    PlayerMediaOptions(engine, state, controllable, onMenuOpen,
+                        Modifier.align(Alignment.CenterStart).width(mediaWidth))
+                    PlayerViewButtons(fullscreen = true, onEpisodes = onEpisodes, onFullscreen = onExit,
+                        modifier = Modifier.align(Alignment.CenterEnd))
                 }
                 PlayerTransport(engine, state, controllable, compact = true,
                     modifier = Modifier.align(Alignment.Center), onInteraction = onInteraction)
-                if (wide) Row(Modifier.align(Alignment.CenterEnd)) {
-                    PlayerOptionButtons(engine, state, controllable, true, onExit, onMenuOpen)
-                }
             }
         }
     }
@@ -403,95 +435,85 @@ private fun PlayerTransport(
 }
 
 @Composable
-fun PlayerOptions(
-    engine: PlayerEngine, state: PlaybackState, controllable: Boolean, fullscreen: Boolean,
-    onFullscreen: () -> Unit, onMenuOpen: (Boolean) -> Unit, modifier: Modifier = Modifier,
+private fun PlayerMediaOptions(
+    engine: PlayerEngine, state: PlaybackState, controllable: Boolean,
+    onMenuOpen: (Boolean) -> Unit, modifier: Modifier = Modifier,
 ) {
     var speedMenu by remember { mutableStateOf(false) }
     var trackMenu by remember { mutableStateOf<TrackType?>(null) }
     val currentMenuOpen by rememberUpdatedState(onMenuOpen)
     LaunchedEffect(speedMenu, trackMenu) { currentMenuOpen(speedMenu || trackMenu != null) }
     DisposableEffect(Unit) { onDispose { currentMenuOpen(false) } }
-    Row(modifier, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Box {
-            TextButton(onClick = { speedMenu = true }, enabled = controllable && engine.capabilities.speed) {
-                Icon(Icons.Outlined.Speed, null, Modifier.size(17.dp))
-                Spacer(Modifier.width(5.dp)); Text("${state.speed}×")
-            }
-            DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
-                listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                    DropdownMenuItem(text = { Text("${speed}×${if (speed == state.speed) " ✓" else ""}") },
-                        onClick = { engine.setSpeed(speed); speedMenu = false })
-                }
-            }
-        }
-        listOf(TrackType.AUDIO, TrackType.SUBTITLE).forEach { type ->
-            val tracks = state.tracks.filter { it.type == type }
-            Box {
-                TextButton(onClick = { trackMenu = type }, enabled = controllable && tracks.isNotEmpty()) {
-                    Icon(if (type == TrackType.AUDIO) Icons.Outlined.Audiotrack else Icons.Outlined.Subtitles, null, Modifier.size(17.dp))
-                    Spacer(Modifier.width(5.dp)); Text(if (type == TrackType.AUDIO) "音轨" else "字幕")
-                }
-                DropdownMenu(expanded = trackMenu == type, onDismissRequest = { trackMenu = null }, modifier = Modifier.heightIn(max = 240.dp)) {
-                    DropdownMenuItem(text = { Text("关闭${if (tracks.none { it.selected }) " ✓" else ""}") },
-                        onClick = { engine.selectTrack(type, null); trackMenu = null })
-                    tracks.forEach { track ->
-                        DropdownMenuItem(text = { Text(track.label + if (track.selected) " ✓" else "") },
-                            onClick = { engine.selectTrack(type, track.id); trackMenu = null })
+    BoxWithConstraints(modifier) {
+        val labelWidth = with(LocalDensity.current) { 37.sp.toDp() }
+        val showLabels = maxWidth / 3 >= 24.dp + labelWidth
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                MediaOptionButton(Icons.Outlined.Speed, "${state.speed}×", "倍速 ${state.speed}×",
+                    showLabels, controllable && engine.capabilities.speed, onClick = { speedMenu = true })
+                DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
+                    listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
+                        DropdownMenuItem(text = { Text("${speed}×${if (speed == state.speed) " ✓" else ""}") },
+                            onClick = { engine.setSpeed(speed); speedMenu = false })
                     }
                 }
             }
-        }
-        IconButton(onClick = onFullscreen, colors = playerIconButtonColors()) {
-            Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, if (fullscreen) "退出全屏" else "全屏播放")
+            listOf(TrackType.AUDIO, TrackType.SUBTITLE).forEach { type ->
+                val tracks = state.tracks.filter { it.type == type }
+                val audio = type == TrackType.AUDIO
+                val title = if (audio) "音轨" else "字幕"
+                Box(Modifier.weight(1f)) {
+                    MediaOptionButton(if (audio) Icons.Outlined.Audiotrack else Icons.Outlined.Subtitles,
+                        title, title, showLabels, controllable && tracks.isNotEmpty(), onClick = { trackMenu = type })
+                    DropdownMenu(expanded = trackMenu == type, onDismissRequest = { trackMenu = null },
+                        modifier = Modifier.heightIn(max = 240.dp)) {
+                        DropdownMenuItem(text = { Text("关闭${if (tracks.none { it.selected }) " ✓" else ""}") },
+                            onClick = { engine.selectTrack(type, null); trackMenu = null })
+                        tracks.forEach { track ->
+                            DropdownMenuItem(text = { Text(track.label + if (track.selected) " ✓" else "") },
+                                onClick = { engine.selectTrack(type, track.id); trackMenu = null })
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun PlayerOptionButtons(
-    engine: PlayerEngine, state: PlaybackState, controllable: Boolean, fullscreen: Boolean,
-    onFullscreen: () -> Unit, onMenuOpen: (Boolean) -> Unit,
+private fun MediaOptionButton(
+    icon: ImageVector,
+    label: String,
+    description: String,
+    showLabel: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
 ) {
-    var speedMenu by remember { mutableStateOf(false) }
-    var trackMenu by remember { mutableStateOf<TrackType?>(null) }
-    val currentMenuOpen by rememberUpdatedState(onMenuOpen)
-    LaunchedEffect(speedMenu, trackMenu) { currentMenuOpen(speedMenu || trackMenu != null) }
-    DisposableEffect(Unit) { onDispose { currentMenuOpen(false) } }
-    Box {
-        TextButton(onClick = { speedMenu = true }, enabled = controllable && engine.capabilities.speed,
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-            Icon(Icons.Outlined.Speed, null, Modifier.size(17.dp))
-            Spacer(Modifier.width(4.dp)); Text("${state.speed}×")
-        }
-        DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
-            listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                DropdownMenuItem(text = { Text("${speed}×${if (speed == state.speed) " ✓" else ""}") },
-                    onClick = { engine.setSpeed(speed); speedMenu = false })
-            }
+    TextButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(2.dp)) {
+        Icon(icon, if (showLabel) null else description, Modifier.size(if (showLabel) 17.dp else 22.dp))
+        if (showLabel) {
+            Spacer(Modifier.width(4.dp))
+            Text(label, maxLines = 1, softWrap = false)
         }
     }
-    listOf(TrackType.AUDIO, TrackType.SUBTITLE).forEach { type ->
-        val tracks = state.tracks.filter { it.type == type }
-        Box {
-            TextButton(onClick = { trackMenu = type }, enabled = controllable && tracks.isNotEmpty(),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-                Icon(if (type == TrackType.AUDIO) Icons.Outlined.Audiotrack else Icons.Outlined.Subtitles, null, Modifier.size(17.dp))
-                Spacer(Modifier.width(4.dp)); Text(if (type == TrackType.AUDIO) "音轨" else "字幕")
-            }
-            DropdownMenu(expanded = trackMenu == type, onDismissRequest = { trackMenu = null }, modifier = Modifier.heightIn(max = 240.dp)) {
-                DropdownMenuItem(text = { Text("关闭${if (tracks.none { it.selected }) " ✓" else ""}") },
-                    onClick = { engine.selectTrack(type, null); trackMenu = null })
-                tracks.forEach { track ->
-                    DropdownMenuItem(text = { Text(track.label + if (track.selected) " ✓" else "") },
-                        onClick = { engine.selectTrack(type, track.id); trackMenu = null })
-                }
-            }
+}
+
+@Composable
+private fun PlayerViewButtons(
+    fullscreen: Boolean,
+    onEpisodes: () -> Unit,
+    onFullscreen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onEpisodes, colors = playerIconButtonColors()) {
+            Icon(Icons.AutoMirrored.Outlined.PlaylistPlay, "选集")
         }
-    }
-    IconButton(onClick = onFullscreen, modifier = Modifier.size(44.dp), colors = playerIconButtonColors()) {
-        Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
-            if (fullscreen) "退出全屏" else "全屏播放", Modifier.size(22.dp))
+        IconButton(onClick = onFullscreen, colors = playerIconButtonColors()) {
+            Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                if (fullscreen) "退出全屏" else "全屏播放")
+        }
     }
 }
 

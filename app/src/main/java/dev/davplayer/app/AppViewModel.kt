@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.Credentials
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 enum class HomeTab { LIBRARY, RECENT, SETTINGS }
@@ -31,7 +32,11 @@ data class BrowserState(
     val error: String? = null,
     val pageId: String = UUID.randomUUID().toString(),
 )
-data class VideoTarget(val server: ServerConnection, val entry: MediaEntry)
+data class VideoTarget(
+    val server: ServerConnection,
+    val entry: MediaEntry,
+    val directory: List<MediaEntry>? = null,
+)
 data class AppState(
     val servers: List<ServerConnection> = emptyList(),
     val initializing: Boolean = true,
@@ -184,14 +189,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun playVideo(server: ServerConnection, entry: MediaEntry, siblings: List<MediaEntry>, explicitStartMs: Long? = null) {
+    suspend fun loadEpisodeDirectory(target: VideoTarget) {
+        if (state.value.video !== target || target.directory != null) return
+        val parent = target.entry.url.toHttpUrl().parentDirectory()
+        val entries = repository.list(target.server, parent).entries
+        mutableState.update { current ->
+            if (current.video === target) current.copy(video = target.copy(directory = entries))
+            else current
+        }
+    }
+
+    fun selectEpisode(url: String) {
+        val target = state.value.video ?: return
+        if (target.entry.url == url) return
+        val directory = target.directory ?: return
+        val episode = directory.firstOrNull { it.url == url && it.isVideo } ?: return
+        playVideo(target.server, episode, directory)
+    }
+
+    private fun playVideo(
+        server: ServerConnection,
+        entry: MediaEntry,
+        siblings: List<MediaEntry>,
+        explicitStartMs: Long? = null,
+        directory: List<MediaEntry>? = siblings,
+    ) {
         history.finish(engine.state.value)
         val seed = WatchRecord.create(server, entry)
         val previous = seed?.let { created -> history.records.value.firstOrNull { it.id == created.id } }?.takeIf { it.sameFile(entry) }
         val startMs = explicitStartMs ?: if (state.value.rememberPosition) previous?.resumePositionMs ?: 0 else 0
         val headers = if (server.username.isNotEmpty() || server.password.isNotEmpty())
             mapOf("Authorization" to Credentials.basic(server.username, server.password, Charsets.UTF_8)) else emptyMap()
-        mutableState.update { it.copy(video = VideoTarget(server, entry)) }
+        mutableState.update { it.copy(video = VideoTarget(server, entry, directory)) }
         if (server.isDemo) { engine.stop(); return }
         val mediaId = "${server.id}:${entry.url.toHttpUrl().encodedPath}"
         if (seed != null) history.start(
@@ -286,7 +315,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val server = state.value.servers.firstOrNull { record.matches(it) }
         val url = server?.let(record::resolve)?.toHttpUrl()
         if (server == null || url == null) { messages.trySend("原连接已移除或修改，无法定位文件夹"); return }
-        val parent = url.newBuilder().encodedPath(url.encodedPath.substringBeforeLast('/') + "/").build().toString()
+        val parent = url.parentDirectory()
         cancelHistoryOpening()
         browserNavigation.clear()
         loadDirectory(server, parent, newSession = true)
@@ -310,11 +339,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     ensureActive()
                     if (state.value.tab == HomeTab.RECENT && state.value.video == null && state.value.servers.any { record.matches(it) }) {
-                        playVideo(server, entry, siblings, if (record.sameFile(entry)) record.resumePositionMs else 0)
+                        playVideo(server, entry, siblings,
+                            explicitStartMs = if (record.sameFile(entry)) record.resumePositionMs else 0,
+                            directory = null,
+                        )
                     }
                     return@launch
                 }
-                val parent = url.newBuilder().encodedPath(url.encodedPath.substringBeforeLast('/') + "/").build().toString()
+                val parent = url.parentDirectory()
                 val directory = repository.list(server, parent)
                 val entry = directory.entries.firstOrNull { it.isVideo && it.url.toHttpUrl().encodedPath == url.encodedPath }
                 if (entry == null) { messages.send("视频已移动或删除，请从媒体库重新打开"); return@launch }
@@ -416,3 +448,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         engine.release()
     }
 }
+
+private fun HttpUrl.parentDirectory(): String =
+    newBuilder().encodedPath(encodedPath.substringBeforeLast('/') + "/").query(null).fragment(null).build().toString()

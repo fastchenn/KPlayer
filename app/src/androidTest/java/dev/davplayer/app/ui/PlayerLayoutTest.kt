@@ -45,7 +45,7 @@ class PlayerLayoutTest {
         try {
             instrumentation.runOnMainSync { activity.setContent { DavTheme {
                 val playback by engine.state.collectAsState()
-                PlayerScreen(target, engine, playback, {})
+                PlayerScreen(target, engine, playback, {}, {}, {})
             } } }
             click(node("全屏播放"))
             await("Fullscreen landscape missing") { activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
@@ -137,14 +137,13 @@ class PlayerLayoutTest {
             instrumentation.runOnMainSync {
                 activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 val playback = engine.state.value
-                activity.setContent { DavTheme { PlayerScreen(target, engine, playback, {}) } }
+                activity.setContent { DavTheme { PlayerScreen(target, engine, playback, {}, {}, {}) } }
             }
             click(node("全屏播放"))
             await("Fullscreen landscape missing") { activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
             verify(activity, title, "landscape")
-            click(node("旋转屏幕方向"))
-            await("Fullscreen portrait missing") { activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT }
-            verify(activity, title, "portrait")
+            click(node("退出全屏"))
+            node("全屏播放")
         } finally { instrumentation.runOnMainSync { activity.finish() } }
     }
 

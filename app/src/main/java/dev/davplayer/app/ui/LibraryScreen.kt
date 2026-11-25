@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.davplayer.app.AppState
@@ -31,9 +32,11 @@ fun LibraryScreen(
     onOpen: (ServerConnection) -> Unit,
     onDemo: () -> Unit,
     onRetry: () -> Unit,
+    bottomPadding: Dp = 0.dp,
 ) {
     var deleting by remember { mutableStateOf<ServerConnection?>(null) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp + bottomPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Box(Modifier.fillMaxWidth().background(
                 Brush.linearGradient(listOf(Color(0xFF27483B), Color(0xFF1A3028))), RoundedCornerShape(28.dp),

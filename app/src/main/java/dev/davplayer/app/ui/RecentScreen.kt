@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.davplayer.app.AppState
@@ -23,6 +24,7 @@ import java.util.Date
 fun RecentScreen(
     state: AppState, onOpen: (WatchRecord) -> Unit, onLocate: (WatchRecord) -> Unit, onRemove: (WatchRecord) -> Unit,
     onClear: () -> Unit, onReload: () -> Unit, onRetrySave: () -> Unit,
+    bottomPadding: Dp = 0.dp,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     val editable = !state.historyLoading && !state.historyLoadError && state.historyOpeningId == null
@@ -33,7 +35,7 @@ fun RecentScreen(
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
     )
     LazyColumn(
-        Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp + bottomPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
