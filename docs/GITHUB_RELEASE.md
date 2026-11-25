@@ -2,9 +2,13 @@
 
 GitHub 仓库是源码的维护入口，不需要在本机同步、编译或上传 APK。签名采用 0.3.1 的固定发布证书，后续版本可以覆盖升级 0.3.1。
 
-## 云端验证结果
+## 当前版本
 
-当前源码版本为 0.3.9 / 17，发布页为 [K Player 0.3.9](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.9)。沿用原包名和 0.3.1 的固定证书，可覆盖升级 0.3.1—0.3.8 及本轮测试包，保留 WebDAV 配置、观看记录和缓存。
+当前源码版本为 0.4.0 / 18，发布页提供签名 APK、原生对应源码和 SHA-256 校验文件。安装包沿用 0.3.1 的固定证书，可覆盖安装 0.3.9 及同证书版本。详见 [0.4.0 发布页](https://github.com/fastchenn/KPlayer/releases/tag/v0.4.0)和[验证记录](verification/v0.4.0.md)。
+
+## 0.3.9 历史验证
+
+0.3.9 / 17 沿用原包名和 0.3.1 的固定证书，可覆盖升级 0.3.1—0.3.8，保留 WebDAV 配置、观看记录和缓存。详见 [K Player 0.3.9](https://github.com/fastchenn/KPlayer/releases/tag/v0.3.9)。
 
 发布前功能提交的 [Android checks](https://github.com/fastchenn/KPlayer/actions/runs/43160487027)已通过应用 90 项、播放器 111 项 Release 单元测试（共 201 项）、10 项发布工具检查及 Lint（0 错误、9 项提示），Release/Debug 和两组设备测试 APK 编译通过。[Android 35/x86_64 模拟器](https://github.com/fastchenn/KPlayer/actions/runs/43160494004)的 6 项目录与三小时合成长视频缓存回归通过。用户反馈两个实际视频的播放和返回正常，并授权发布 0.3.9；此反馈不替代自动化设备测试。
 

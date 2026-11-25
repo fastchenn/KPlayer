@@ -8,9 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,7 +26,6 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,6 +42,7 @@ import dev.davplayer.playback.api.*
 import kotlinx.coroutines.delay
 
 private val PlayerBackground = Color(0xFF080D0B)
+private val PlayerActionSize = 48.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +57,7 @@ fun PlayerScreen(
     val ready = engine.availability is EngineAvailability.Available && !target.server.isDemo
     val controllable = ready && state.phase in setOf(PlaybackPhase.PLAYING, PlaybackPhase.PAUSED, PlaybackPhase.BUFFERING, PlaybackPhase.ENDED)
     var fullscreen by rememberSaveable { mutableStateOf(false) }
+    var locked by rememberSaveable { mutableStateOf(false) }
     var controlsVisible by remember(target.entry.url) { mutableStateOf(true) }
     var controlsInteraction by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -69,10 +68,10 @@ fun PlayerScreen(
     val seekPreview = swipe.preview
     val lifecycleOwner = LocalLifecycleOwner.current
     var gesturesEnabled by remember(lifecycleOwner) { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
-    val canBoost = ready && engine.capabilities.speed &&
+    val canBoost = !locked && ready && engine.capabilities.speed &&
         state.phase in setOf(PlaybackPhase.PLAYING, PlaybackPhase.BUFFERING)
     val playing = state.phase == PlaybackPhase.PLAYING || state.phase == PlaybackPhase.BUFFERING
-    val canSwipeSeek = controllable && engine.capabilities.seek && state.seekable && (state.durationMs ?: 0) > 0
+    val canSwipeSeek = !locked && controllable && engine.capabilities.seek && state.seekable && (state.durationMs ?: 0) > 0
 
     PlayerWindowMode(fullscreen)
     DisposableEffect(boost, swipe, lifecycleOwner) {
@@ -90,8 +89,9 @@ fun PlayerScreen(
             swipe.cancel()
         }
     }
-    LaunchedEffect(fullscreen, controlsVisible, controlsInteraction, menuOpen, episodesOpen, seeking, boost.active, seekPreview != null, playing) {
-        if (fullscreen && controlsVisible && playing && !menuOpen && !episodesOpen && !seeking && !boost.active && seekPreview == null) {
+    val controlsBusy = menuOpen || episodesOpen || seeking || boost.active || seekPreview != null
+    LaunchedEffect(fullscreen, locked, controlsVisible, controlsInteraction, controlsBusy, playing) {
+        if (fullscreen && controlsVisible && (locked || playing) && !controlsBusy) {
             delay(4_000)
             controlsVisible = false
         }
@@ -107,7 +107,13 @@ fun PlayerScreen(
         episodesOpen = false
         controlsInteraction++
     }
-    BackHandler(fullscreen) { leaveFullscreen() }
+    fun toggleLock() {
+        boost.stop()
+        swipe.cancel()
+        locked = !locked
+        controlsVisible = !locked
+    }
+    BackHandler(fullscreen) { if (!locked) leaveFullscreen() }
 
     if (episodesOpen) EpisodePicker(
         target = target,
@@ -146,7 +152,7 @@ fun PlayerScreen(
                 PlayerVideo(
                     target = target, engine = engine, state = state, ready = ready, landscape = landscape,
                     fullscreen = fullscreen, canBoost = canBoost, canSeek = canSwipeSeek,
-                    gesturesEnabled = gesturesEnabled,
+                    gesturesEnabled = gesturesEnabled, locked = locked,
                     onTap = { controlsVisible = !controlsVisible },
                     onHold = boost::start, onRelease = boost::stop,
                     onSeekStart = { swipe.start(it); controlsInteraction++ }, onSeekDrag = swipe::drag,
@@ -184,10 +190,7 @@ fun PlayerScreen(
             }
             if (fullscreen) {
                 if (controlsVisible && !boost.active && seekPreview == null) {
-                    val cutout = WindowInsets.displayCutout.asPaddingValues()
-                    val direction = LocalLayoutDirection.current
-                    val sidePadding = 20.dp + maxOf(cutout.calculateLeftPadding(direction), cutout.calculateRightPadding(direction))
-                    Row(
+                    if (!locked) Row(
                         Modifier.align(Alignment.TopCenter).fillMaxWidth()
                             .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .75f), Color.Transparent)))
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top))
@@ -198,15 +201,20 @@ fun PlayerScreen(
                         Text(target.entry.name, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         CacheSpeed(state, Modifier.padding(horizontal = 8.dp))
                     }
+                    val bottomGradient = if (locked) Modifier else Modifier.background(
+                        Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f))),
+                    )
                     Column(
                         Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f))))
+                            .then(bottomGradient)
                             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Bottom))
-                            .padding(horizontal = sidePadding, vertical = 8.dp),
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
                     ) {
-                        PlayerProgress(engine, state, controllable, compact = true, onSeeking = { seeking = it; controlsInteraction++ })
+                        if (!locked) PlayerProgress(engine, state, controllable, compact = true,
+                            onSeeking = { seeking = it; controlsInteraction++ })
                         FullscreenControls(
-                            engine, state, controllable,
+                            engine, state, controllable, locked,
+                            onLock = ::toggleLock,
                             onExit = ::leaveFullscreen,
                             onEpisodes = { episodesOpen = true },
                             onMenuOpen = { menuOpen = it },
@@ -245,7 +253,7 @@ private fun CacheSpeed(state: PlaybackState, modifier: Modifier = Modifier) {
 @Composable
 private fun PlayerVideo(
     target: VideoTarget, engine: PlayerEngine, state: PlaybackState, ready: Boolean, landscape: Boolean,
-    fullscreen: Boolean, canBoost: Boolean, canSeek: Boolean, gesturesEnabled: Boolean,
+    fullscreen: Boolean, canBoost: Boolean, canSeek: Boolean, gesturesEnabled: Boolean, locked: Boolean,
     onTap: () -> Unit, onHold: () -> Unit, onRelease: () -> Unit,
     onSeekStart: (Float) -> Unit, onSeekDrag: (Float) -> Unit,
     onSeekFinish: () -> Unit, onSeekCancel: () -> Unit,
@@ -297,8 +305,10 @@ private fun PlayerVideo(
             }
             PlaybackPhase.ERROR -> Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(state.message ?: "播放失败", color = Color.White, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(12.dp))
-                FilledTonalButton(onClick = engine::play) { Text("重试") }
+                if (!locked) {
+                    Spacer(Modifier.height(12.dp))
+                    FilledTonalButton(onClick = engine::play) { Text("重试") }
+                }
             }
             else -> Unit
         }
@@ -380,6 +390,8 @@ private fun FullscreenControls(
     engine: PlayerEngine,
     state: PlaybackState,
     controllable: Boolean,
+    locked: Boolean,
+    onLock: () -> Unit,
     onExit: () -> Unit,
     onEpisodes: () -> Unit,
     onMenuOpen: (Boolean) -> Unit,
@@ -388,21 +400,29 @@ private fun FullscreenControls(
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val mediaWidth = 228.dp
         val singleRow = maxWidth >= 640.dp
-        val splitMediaWidth = minOf(mediaWidth, (maxWidth - 96.dp).coerceAtLeast(0.dp))
+        if (locked) {
+            // Leave the unlock button where it was before the other controls disappeared.
+            Box(Modifier.fillMaxWidth().height(if (singleRow) PlayerActionSize else PlayerActionSize * 2)) {
+                PlaybackLockButton(locked = true, onClick = onLock,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(end = PlayerActionSize * 2))
+            }
+            return@BoxWithConstraints
+        }
+        val splitMediaWidth = minOf(mediaWidth, (maxWidth - PlayerActionSize * 3).coerceAtLeast(0.dp))
         Column(Modifier.fillMaxWidth()) {
             if (!singleRow) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
                 PlayerMediaOptions(engine, state, controllable, onMenuOpen,
                     Modifier.width(splitMediaWidth))
-                PlayerViewButtons(fullscreen = true, onEpisodes = onEpisodes, onFullscreen = onExit)
+                PlayerViewButtons(fullscreen = true, onEpisodes = onEpisodes, onFullscreen = onExit, onLock = onLock)
             }
             // Transport is centered in the full viewport, independently of option widths.
-            Box(Modifier.fillMaxWidth().height(48.dp)) {
+            Box(Modifier.fillMaxWidth().height(PlayerActionSize)) {
                 if (singleRow) {
                     PlayerMediaOptions(engine, state, controllable, onMenuOpen,
                         Modifier.align(Alignment.CenterStart).width(mediaWidth))
                     PlayerViewButtons(fullscreen = true, onEpisodes = onEpisodes, onFullscreen = onExit,
-                        modifier = Modifier.align(Alignment.CenterEnd))
+                        modifier = Modifier.align(Alignment.CenterEnd), onLock = onLock)
                 }
                 PlayerTransport(engine, state, controllable, compact = true,
                     modifier = Modifier.align(Alignment.Center), onInteraction = onInteraction)
@@ -505,15 +525,33 @@ private fun PlayerViewButtons(
     onEpisodes: () -> Unit,
     onFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
+    onLock: (() -> Unit)? = null,
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onEpisodes, colors = playerIconButtonColors()) {
+        if (onLock != null) PlaybackLockButton(locked = false, onClick = onLock)
+        IconButton(onClick = onEpisodes, modifier = Modifier.size(PlayerActionSize), colors = playerIconButtonColors()) {
             Icon(Icons.AutoMirrored.Outlined.PlaylistPlay, "选集")
         }
-        IconButton(onClick = onFullscreen, colors = playerIconButtonColors()) {
+        IconButton(onClick = onFullscreen, modifier = Modifier.size(PlayerActionSize), colors = playerIconButtonColors()) {
             Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
                 if (fullscreen) "退出全屏" else "全屏播放")
         }
+    }
+}
+
+@Composable
+private fun PlaybackLockButton(locked: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(PlayerActionSize),
+        colors = if (locked) IconButtonDefaults.iconButtonColors(
+            containerColor = Color.Black.copy(alpha = .65f), contentColor = MintColor,
+        ) else playerIconButtonColors(),
+    ) {
+        Icon(
+            if (locked) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+            if (locked) "解锁播放控件" else "锁定播放控件",
+        )
     }
 }
 

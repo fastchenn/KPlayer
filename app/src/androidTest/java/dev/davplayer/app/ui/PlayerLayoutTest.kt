@@ -216,7 +216,7 @@ class PlayerLayoutTest {
         while (System.nanoTime() < end) { if (condition()) return; Thread.sleep(50) }
         fail(message)
     }
-    private class TestEngine(phase: PlaybackPhase = PlaybackPhase.PAUSED) : PlayerEngine {
+    internal class TestEngine(phase: PlaybackPhase = PlaybackPhase.PAUSED) : PlayerEngine {
         override val id = EngineId.MPV
         override val availability = EngineAvailability.Available
         override val capabilities = PlayerCapabilities(seek = true, speed = true)
@@ -229,8 +229,12 @@ class PlayerLayoutTest {
         override fun pause() {}
         override fun stop() {}
         val seeks = mutableListOf<Long>()
+        val speedChanges = mutableListOf<Float>()
         override fun seekTo(positionMs: Long) { seeks += positionMs }
-        override fun setSpeed(speed: Float) { state.value = state.value.copy(speed = speed) }
+        override fun setSpeed(speed: Float) {
+            speedChanges += speed
+            state.value = state.value.copy(speed = speed)
+        }
         override fun selectTrack(type: TrackType, trackId: String?) {}
         override fun release() {}
     }
