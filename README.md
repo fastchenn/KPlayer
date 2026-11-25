@@ -14,7 +14,7 @@
 
 <img src="https://cdn.nodeimage.com/i/Efl3XAAWafVkrGyzuoZoUCOa7E1btab4.webp" alt="Efl3XAAWafVkrGyzuoZoUCOa7E1btab4">
 
-<img src="https://cdn.nodeimage.com/i/EjmkyUOHBrMUFTUZtT70BFiNyDGkWjR4.webp" alt="EjmkyUOHBrMUFTUZtT70BFiNyDGkWjR4">
+<img src="https://cdn.nodeimage.com/i/366y0TDeaCMl5gCYy9KoAxzjVFUBFM5i.webp" alt="366y0TDeaCMl5gCYy9KoAxzjVFUBFM5i">
 
 ## 下载
 
