@@ -23,6 +23,57 @@ import kotlin.math.abs
 
 /** Tests actual Compose accessibility bounds after fullscreen orientation changes. */
 class PlayerLayoutTest {
+    @Test fun fullscreenLockOnlyRevealsUnlockButtonAndBlocksPlaybackGestures() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        val engine = TestEngine(PlaybackPhase.PLAYING)
+        val target = VideoTarget(
+            ServerConnection.create("NAS", "http://127.0.0.1/dav/", "", ""),
+            MediaEntry("http://127.0.0.1/dav/video.mkv", "锁定验证.mkv", false),
+        )
+        try {
+            instrumentation.runOnMainSync {
+                activity.setContent {
+                    DavTheme {
+                        val playback by engine.state.collectAsState()
+                        PlayerScreen(target, engine, playback, onBack = {}, onLoadEpisodeDirectory = {}, onSelectEpisode = {})
+                    }
+                }
+            }
+            click(node("全屏播放"))
+            await("Fullscreen landscape missing") { activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
+            val lockBounds = bounds(node("锁定播放控件"))
+            click(node("锁定播放控件"))
+            await("Lock did not hide the controls") { findNode("锁定播放控件") == null }
+            assertNull(findNode("解锁播放控件"))
+
+            val automation = instrumentation.uiAutomation
+            val screen = bounds(automation.rootInActiveWindow)
+            val x = screen.centerX()
+            val y = screen.centerY()
+            shell("input tap $x $y")
+            val unlock = node("解锁播放控件")
+            assertEquals(lockBounds.centerX(), bounds(unlock).centerX())
+            assertEquals(lockBounds.centerY(), bounds(unlock).centerY())
+            listOf("锁定验证.mkv", "暂停", "音轨", "字幕", "选集", "退出全屏").forEach { label ->
+                assertNull("Locked playback exposed $label", findNode(label))
+            }
+            shell("input swipe $x $y ${screen.right - screen.width() / 4} $y 200")
+            shell("input swipe $x $y $x $y 750")
+            shell("input keyevent KEYCODE_BACK")
+            assertTrue(engine.seeks.isEmpty())
+            assertTrue(engine.speedChanges.isEmpty())
+            assertNull(findNode("全屏播放"))
+            click(node("解锁播放控件"))
+            node("暂停")
+            node("选集")
+            node("锁定播放控件")
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
     @Test fun fullscreenSwipePreviewsOnceAndCannotTurnIntoDoubleSpeed() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
@@ -33,6 +84,7 @@ class PlayerLayoutTest {
         var downTime = 0L
         var x = 0f
         var y = 0f
+        var pointerDown = false
         fun touch(action: Int, nextX: Float = x) {
             x = nextX
             val now = SystemClock.uptimeMillis()
@@ -40,15 +92,24 @@ class PlayerLayoutTest {
             val event = MotionEvent.obtain(downTime, now, action, x, y, 0)
             try { assertTrue(instrumentation.uiAutomation.injectInputEvent(event, true)) }
             finally { event.recycle() }
+            pointerDown = action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL
             instrumentation.waitForIdleSync()
+        }
+        fun dragTo(end: Float) {
+            Thread.sleep(32)
+            touch(MotionEvent.ACTION_MOVE, end)
+            Thread.sleep(32)
+            // Hold the endpoint through another frame so Android's touch resampling settles.
+            touch(MotionEvent.ACTION_MOVE, end)
         }
         try {
             instrumentation.runOnMainSync { activity.setContent { DavTheme {
                 val playback by engine.state.collectAsState()
-                PlayerScreen(target, engine, playback, {})
+                PlayerScreen(target, engine, playback, onBack = {}, onLoadEpisodeDirectory = {}, onSelectEpisode = {})
             } } }
             click(node("全屏播放"))
             await("Fullscreen landscape missing") { activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
+            node("退出全屏")
             var width = 0f
             instrumentation.runOnMainSync { width = activity.window.decorView.width.toFloat(); y = activity.window.decorView.height / 2f }
 
@@ -63,7 +124,7 @@ class PlayerLayoutTest {
             assertEquals(1f, engine.state.value.speed)
 
             touch(MotionEvent.ACTION_DOWN, width / 2)
-            touch(MotionEvent.ACTION_MOVE, width * .75f)
+            dragTo(width * .75f)
             val seekHint = bounds(node("00:01:00/00:02:00"))
             assertEquals(holdHint.centerX(), seekHint.centerX())
             assertEquals(holdHint.top, seekHint.top)
@@ -75,14 +136,17 @@ class PlayerLayoutTest {
 
             // Cancellation must discard the preview and restore the hint/controls.
             touch(MotionEvent.ACTION_DOWN, width / 2)
-            touch(MotionEvent.ACTION_MOVE, width * .25f)
+            dragTo(width * .25f)
             node("00:00:00/00:02:00")
             touch(MotionEvent.ACTION_CANCEL)
             assertEquals(listOf(60_000L), engine.seeks)
             node("手势验证.mkv")
         } finally {
-            touch(MotionEvent.ACTION_CANCEL)
-            instrumentation.runOnMainSync { activity.finish() }
+            try {
+                if (pointerDown) touch(MotionEvent.ACTION_CANCEL)
+            } finally {
+                instrumentation.runOnMainSync { activity.finish() }
+            }
         }
     }
 
@@ -94,7 +158,7 @@ class PlayerLayoutTest {
         try {
             instrumentation.runOnMainSync { activity.setContent { DavTheme {
                 SettingsScreen(dev.davplayer.app.AppState(playbackCacheReady = true, playbackCacheUsedBytes = 2_097_152),
-                    {}, {}, {}, {}, { cleared = true }, {})
+                    {}, {}, {}, {}, {}, { cleared = true }, {})
             } } }
             Thread.sleep(500)
             fun scroll(node: AccessibilityNodeInfo?): Boolean {
@@ -137,14 +201,17 @@ class PlayerLayoutTest {
             instrumentation.runOnMainSync {
                 activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 val playback = engine.state.value
-                activity.setContent { DavTheme { PlayerScreen(target, engine, playback, {}) } }
+                activity.setContent {
+                    DavTheme {
+                        PlayerScreen(target, engine, playback, onBack = {}, onLoadEpisodeDirectory = {}, onSelectEpisode = {})
+                    }
+                }
             }
             click(node("全屏播放"))
             await("Fullscreen landscape missing") { activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
             verify(activity, title, "landscape")
-            click(node("旋转屏幕方向"))
-            await("Fullscreen portrait missing") { activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT }
-            verify(activity, title, "portrait")
+            shell("input keyevent KEYCODE_BACK")
+            node("全屏播放")
         } finally { instrumentation.runOnMainSync { activity.finish() } }
     }
 
@@ -163,6 +230,15 @@ class PlayerLayoutTest {
         assertTrue("Transport must stay below progress/options", play.centerY() > height * .75)
         assertTrue(abs(back.centerY() - play.centerY()) <= 2)
         assertTrue(abs(forward.centerY() - play.centerY()) <= 2)
+        val rate = bounds(node("1.0×"))
+        val audio = bounds(node("音轨"))
+        val subtitle = bounds(node("字幕"))
+        val lock = bounds(node("锁定播放控件"))
+        val episodes = bounds(node("选集"))
+        val exit = bounds(node("退出全屏") { bounds(it).centerY() > height / 2 })
+        assertTrue("Playback settings must be ordered on the left", rate.centerX() < audio.centerX() && audio.centerX() < subtitle.centerX() && subtitle.right < width / 2)
+        assertTrue("Lock, episodes and fullscreen must be ordered on the right",
+            width / 2 < lock.left && lock.centerX() < episodes.centerX() && episodes.centerX() < exit.centerX())
         val speed = bounds(node("缓存速度 1.00 MB/s"))
         val filename = bounds(node(title))
         assertTrue("Cache speed left the title row", abs(speed.centerY() - filename.centerY()) <= 4)
@@ -185,18 +261,22 @@ class PlayerLayoutTest {
         ).bufferedReader().use { it.readText() }
     }
     private fun bounds(node: AccessibilityNodeInfo) = Rect().also(node::getBoundsInScreen)
-    private fun node(label: String): AccessibilityNodeInfo {
+    private fun findNode(label: String, matches: (AccessibilityNodeInfo) -> Boolean = { true }): AccessibilityNodeInfo? {
+        fun find(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+            if (node == null) return null
+            if ((node.contentDescription?.toString() == label || node.text?.toString() == label) && matches(node)) return node
+            repeat(node.childCount) { find(node.getChild(it))?.let { result -> return result } }
+            return null
+        }
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        automation.clearCache()
+        return find(automation.rootInActiveWindow)
+    }
+
+    private fun node(label: String, matches: (AccessibilityNodeInfo) -> Boolean = { true }): AccessibilityNodeInfo {
         var found: AccessibilityNodeInfo? = null
         try { await("Missing UI node: $label") {
-            fun find(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
-                if (node == null) return null
-                if (node.contentDescription?.toString() == label || node.text?.toString() == label) return node
-                repeat(node.childCount) { find(node.getChild(it))?.let { result -> return result } }
-                return null
-            }
-            val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-            automation.clearCache()
-            found = find(automation.rootInActiveWindow)
+            found = findNode(label, matches)
             found != null
         } } catch (error: AssertionError) {
             val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
@@ -230,8 +310,12 @@ class PlayerLayoutTest {
         override fun pause() {}
         override fun stop() {}
         val seeks = mutableListOf<Long>()
+        val speedChanges = mutableListOf<Float>()
         override fun seekTo(positionMs: Long) { seeks += positionMs }
-        override fun setSpeed(speed: Float) { state.value = state.value.copy(speed = speed) }
+        override fun setSpeed(speed: Float) {
+            speedChanges += speed
+            state.value = state.value.copy(speed = speed)
+        }
         override fun selectTrack(type: TrackType, trackId: String?) {}
         override fun release() {}
     }

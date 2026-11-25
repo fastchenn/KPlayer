@@ -19,7 +19,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -81,24 +80,26 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
         key(browser.server.id, browser.url) {
             val pathScroll = rememberScrollState()
             val threeLines = with(LocalDensity.current) { 66.sp.toDp() }
+            val linkColor = MintColor
+            val separatorColor = MaterialTheme.colorScheme.onBackground
             Text(
                 text = buildAnnotatedString {
                     // A single text layout keeps Home and the path on the same baseline,
                     // and lets wrapped lines use the full available width.
                     withLink(LinkAnnotation.Clickable(
                         tag = "home",
-                        styles = TextLinkStyles(style = SpanStyle(color = MintColor, fontWeight = FontWeight.Medium)),
+                        styles = TextLinkStyles(style = SpanStyle(color = linkColor, fontWeight = FontWeight.Medium)),
                         linkInteractionListener = { onHome() },
                     )) {
                         appendInlineContent("homeIcon")
                         append("\u202F主页")
                     }
-                    withStyle(SpanStyle(color = Color.White)) { append("  -  ") }
+                    withStyle(SpanStyle(color = separatorColor)) { append("  -  ") }
                     breadcrumbs.forEachIndexed { index, breadcrumb ->
                         if (index > 0) append("  /  ")
                         withLink(LinkAnnotation.Clickable(
                             tag = breadcrumb.url,
-                            styles = TextLinkStyles(style = SpanStyle(color = MintColor)),
+                            styles = TextLinkStyles(style = SpanStyle(color = linkColor)),
                             linkInteractionListener = { onNavigate(breadcrumb.url) },
                         )) { append(breadcrumb.name) }
                     }
@@ -157,7 +158,7 @@ fun BrowserScreen(browser: BrowserState, onBack: () -> Unit, onRefresh: () -> Un
 @Composable
 private fun MediaRow(entry: MediaEntry, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(enabled = entry.isDirectory || entry.isVideo, onClick = onClick).padding(horizontal = 10.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        val color = if (entry.isDirectory) MintColor else if (entry.isVideo) Color(0xFFBFC4F5) else MutedColor
+        val color = if (entry.isDirectory) MintColor else if (entry.isVideo) MaterialTheme.colorScheme.tertiary else MutedColor
         Box(Modifier.size(48.dp).background(color.copy(alpha = .09f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
             Icon(if (entry.isDirectory) Icons.Outlined.Folder else if (entry.isVideo) Icons.Outlined.PlayCircleOutline else Icons.Outlined.Description, null, tint = color, modifier = Modifier.size(26.dp))
         }

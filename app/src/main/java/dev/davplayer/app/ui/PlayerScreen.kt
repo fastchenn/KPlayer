@@ -8,13 +8,12 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,6 +24,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,29 +42,38 @@ import dev.davplayer.playback.api.*
 import kotlinx.coroutines.delay
 
 private val PlayerBackground = Color(0xFF080D0B)
+private val PlayerActionSize = 48.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState, onBack: () -> Unit) {
+fun PlayerScreen(
+    target: VideoTarget,
+    engine: PlayerEngine,
+    state: PlaybackState,
+    onBack: () -> Unit,
+    onLoadEpisodeDirectory: suspend (VideoTarget) -> Unit,
+    onSelectEpisode: (String) -> Unit,
+) {
     val ready = engine.availability is EngineAvailability.Available && !target.server.isDemo
     val controllable = ready && state.phase in setOf(PlaybackPhase.PLAYING, PlaybackPhase.PAUSED, PlaybackPhase.BUFFERING, PlaybackPhase.ENDED)
-    var fullscreen by rememberSaveable(target.entry.url) { mutableStateOf(false) }
-    var fullscreenPortrait by rememberSaveable(target.entry.url) { mutableStateOf(false) }
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
+    var locked by rememberSaveable { mutableStateOf(false) }
     var controlsVisible by remember(target.entry.url) { mutableStateOf(true) }
     var controlsInteraction by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
+    var episodePickerOpen by rememberSaveable { mutableStateOf(false) }
     var seeking by remember { mutableStateOf(false) }
     val boost = remember(engine, target.entry.url) { HoldToDoubleSpeed(engine) }
     val swipe = remember(engine, target.entry.url) { SwipeToSeek(engine) }
     val seekPreview = swipe.preview
     val lifecycleOwner = LocalLifecycleOwner.current
     var gesturesEnabled by remember(lifecycleOwner) { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
-    val canBoost = ready && engine.capabilities.speed &&
+    val canBoost = !locked && ready && engine.capabilities.speed &&
         state.phase in setOf(PlaybackPhase.PLAYING, PlaybackPhase.BUFFERING)
     val playing = state.phase == PlaybackPhase.PLAYING || state.phase == PlaybackPhase.BUFFERING
-    val canSwipeSeek = controllable && engine.capabilities.seek && state.seekable && (state.durationMs ?: 0) > 0
+    val canSwipeSeek = !locked && controllable && engine.capabilities.seek && state.seekable && (state.durationMs ?: 0) > 0
 
-    PlayerWindowMode(fullscreen, fullscreenPortrait)
+    PlayerWindowMode(fullscreen)
     DisposableEffect(boost, swipe, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             gesturesEnabled = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
@@ -79,8 +89,9 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
             swipe.cancel()
         }
     }
-    LaunchedEffect(fullscreen, controlsVisible, controlsInteraction, menuOpen, seeking, boost.active, seekPreview != null, playing) {
-        if (fullscreen && controlsVisible && playing && !menuOpen && !seeking && !boost.active && seekPreview == null) {
+    val controlsBusy = menuOpen || episodePickerOpen || seeking || boost.active || seekPreview != null
+    LaunchedEffect(fullscreen, locked, controlsVisible, controlsInteraction, controlsBusy, playing) {
+        if (fullscreen && controlsVisible && (locked || playing) && !controlsBusy) {
             delay(4_000)
             controlsVisible = false
         }
@@ -91,24 +102,54 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
         fullscreen = false
         controlsVisible = true
         menuOpen = false
+        episodePickerOpen = false
     }
-    BackHandler(fullscreen) { leaveFullscreen() }
+    BackHandler(fullscreen) { if (!locked) leaveFullscreen() }
 
+    fun toggleLock() {
+        boost.stop()
+        swipe.cancel()
+        locked = !locked
+        controlsVisible = !locked
+    }
+    fun showEpisodePicker() {
+        boost.stop()
+        swipe.cancel()
+        episodePickerOpen = true
+    }
+    fun dismissEpisodePicker() {
+        episodePickerOpen = false
+        controlsInteraction++
+    }
+    if (episodePickerOpen) {
+        val content: @Composable () -> Unit = {
+            EpisodePicker(
+                target, onLoadEpisodeDirectory,
+                onSelect = { url -> dismissEpisodePicker(); onSelectEpisode(url) },
+                onDismiss = ::dismissEpisodePicker,
+            )
+        }
+        if (fullscreen) DavTheme(content = content) else content()
+    }
+
+    val lightChrome = LocalLightTheme.current && !fullscreen
+    val chromeBackground = if (lightChrome) CanvasColor else PlayerBackground
+    val chromeContent = if (lightChrome) MaterialTheme.colorScheme.onSurface else Color.White
     Scaffold(
-        containerColor = PlayerBackground,
-        contentColor = Color.White,
+        containerColor = chromeBackground,
+        contentColor = chromeContent,
         contentWindowInsets = if (fullscreen) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
             if (!fullscreen) TopAppBar(
                 title = {
                     Column {
-                        Text(target.entry.name, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(target.entry.name, color = chromeContent, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(target.server.name, fontSize = 11.sp, color = MutedColor)
                     }
                 },
                 navigationIcon = { IconButton(onClick = onBack, colors = playerIconButtonColors()) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回目录") } },
                 actions = { Tag("mpv"); Spacer(Modifier.width(16.dp)) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = PlayerBackground),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = chromeBackground),
             )
         },
     ) { insets ->
@@ -116,16 +157,20 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
             val landscape = maxWidth > maxHeight
             // Keep the Surface at the same composition position when changing screen modes.
             Column(Modifier.fillMaxSize()) {
-                PlayerVideo(
-                    target = target, engine = engine, state = state, ready = ready, landscape = landscape,
-                    fullscreen = fullscreen, canBoost = canBoost, canSeek = canSwipeSeek,
-                    gesturesEnabled = gesturesEnabled,
-                    onTap = { controlsVisible = !controlsVisible },
-                    onHold = boost::start, onRelease = boost::stop,
-                    onSeekStart = { swipe.start(it); controlsInteraction++ }, onSeekDrag = swipe::drag,
-                    onSeekFinish = swipe::finish, onSeekCancel = swipe::cancel,
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                )
+                DavTheme {
+                    CompositionLocalProvider(LocalContentColor provides Color.White) {
+                        PlayerVideo(
+                            target = target, engine = engine, state = state, ready = ready, landscape = landscape,
+                            fullscreen = fullscreen, locked = locked, canBoost = canBoost, canSeek = canSwipeSeek,
+                            gesturesEnabled = gesturesEnabled,
+                            onTap = { controlsVisible = !controlsVisible },
+                            onHold = boost::start, onRelease = boost::stop,
+                            onSeekStart = { swipe.start(it); controlsInteraction++ }, onSeekDrag = swipe::drag,
+                            onSeekFinish = swipe::finish, onSeekCancel = swipe::cancel,
+                            modifier = Modifier.fillMaxWidth().weight(1f).background(PlayerBackground),
+                        )
+                    }
+                }
                 if (!fullscreen) {
                     Column(
                         Modifier.fillMaxWidth()
@@ -134,7 +179,7 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                     ) {
                         if (!landscape) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(target.entry.name.substringBeforeLast('.'), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Text(target.entry.name.substringBeforeLast('.'), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                 Spacer(Modifier.width(10.dp))
                                 Tag(if (target.server.isDemo) "示例" else "WebDAV", if (target.server.isDemo) WarmColor else MintColor)
                             }
@@ -146,21 +191,41 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                         CacheSpeed(state, Modifier.padding(top = 4.dp))
                         PlayerTransport(engine, state, controllable, compact = landscape, modifier = Modifier.fillMaxWidth())
                         if (!landscape) HorizontalDivider(color = LineColor)
-                        PlayerOptions(
-                            engine, state, controllable, fullscreen = false,
-                            onFullscreen = { fullscreenPortrait = false; fullscreen = true; controlsVisible = true },
-                            onMenuOpen = { menuOpen = it },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            val withIcons = maxWidth >= 305.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                PlaybackOptions(
+                                    engine, state, controllable, withIcons, { menuOpen = it }, Modifier.weight(1f),
+                                )
+                                PlayerActions(
+                                    fullscreen = false, onEpisodes = ::showEpisodePicker,
+                                    onFullscreen = { fullscreen = true; controlsVisible = true },
+                                )
+                            }
+                        }
                     }
                 }
             }
-            if (fullscreen) {
-                if (controlsVisible && !boost.active && seekPreview == null) {
+            if (fullscreen) DavTheme {
+                val cutout = WindowInsets.displayCutout
+                val direction = LocalLayoutDirection.current
+                val sideInset = with(LocalDensity.current) {
+                    maxOf(cutout.getLeft(this, direction), cutout.getRight(this, direction)).toDp()
+                }
+                val horizontalPadding = sideInset + if (maxWidth < 360.dp) 12.dp else 20.dp
+                if (locked && controlsVisible) {
+                    PlaybackLockButton(
+                        locked = true,
+                        onClick = ::toggleLock,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                            .windowInsetsPadding(cutout.only(WindowInsetsSides.Bottom))
+                            .padding(end = horizontalPadding + PlayerActionSize * 2, bottom = 8.dp),
+                    )
+                } else if (!locked && controlsVisible && !boost.active && seekPreview == null) {
                     Row(
                         Modifier.align(Alignment.TopCenter).fillMaxWidth()
                             .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .75f), Color.Transparent)))
-                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top))
+                            .windowInsetsPadding(cutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                             .padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -171,20 +236,21 @@ fun PlayerScreen(target: VideoTarget, engine: PlayerEngine, state: PlaybackState
                     Column(
                         Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f))))
-                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Bottom))
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                            .windowInsetsPadding(cutout.only(WindowInsetsSides.Bottom))
+                            .padding(horizontal = horizontalPadding, vertical = 8.dp),
                     ) {
                         PlayerProgress(engine, state, controllable, compact = true, onSeeking = { seeking = it; controlsInteraction++ })
                         FullscreenControls(
                             engine, state, controllable,
                             onExit = ::leaveFullscreen,
-                            onRotate = { boost.stop(); fullscreenPortrait = !fullscreenPortrait; controlsInteraction++ },
+                            onEpisodes = ::showEpisodePicker,
+                            onLock = ::toggleLock,
                             onMenuOpen = { menuOpen = it },
                             onInteraction = { controlsInteraction++ },
                         )
                     }
                 }
-                val gestureLabel = seekPreview?.label ?: if (boost.active) "2X" else null
+                val gestureLabel = if (locked) null else seekPreview?.label ?: if (boost.active) "2X" else null
                 if (gestureLabel != null) {
                     Text(
                         text = gestureLabel, color = MintColor, fontSize = 14.sp,
@@ -209,13 +275,13 @@ private fun CacheSpeed(state: PlaybackState, modifier: Modifier = Modifier) {
             if (progress.reachedEnd) append(" · 全片已缓存")
         }
     }
-    Text(text, color = Color.White, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = modifier)
+    Text(text, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = modifier)
 }
 
 @Composable
 private fun PlayerVideo(
     target: VideoTarget, engine: PlayerEngine, state: PlaybackState, ready: Boolean, landscape: Boolean,
-    fullscreen: Boolean, canBoost: Boolean, canSeek: Boolean, gesturesEnabled: Boolean,
+    fullscreen: Boolean, locked: Boolean, canBoost: Boolean, canSeek: Boolean, gesturesEnabled: Boolean,
     onTap: () -> Unit, onHold: () -> Unit, onRelease: () -> Unit,
     onSeekStart: (Float) -> Unit, onSeekDrag: (Float) -> Unit,
     onSeekFinish: () -> Unit, onSeekCancel: () -> Unit,
@@ -267,8 +333,10 @@ private fun PlayerVideo(
             }
             PlaybackPhase.ERROR -> Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(state.message ?: "播放失败", color = Color.White, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(12.dp))
-                FilledTonalButton(onClick = engine::play) { Text("重试") }
+                if (!locked) {
+                    Spacer(Modifier.height(12.dp))
+                    FilledTonalButton(onClick = engine::play) { Text("重试") }
+                }
             }
             else -> Unit
         }
@@ -287,11 +355,12 @@ fun PlayerProgress(
     val duration = state.durationMs?.takeIf { it > 0 }
     val positionFraction = if (duration != null) (state.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val trackColor = MaterialTheme.colorScheme.outline
+    val positionColor = MintColor
     val seekEnabled = controllable && engine.capabilities.seek && state.seekable && duration != null
     val interactionSource = remember { MutableInteractionSource() }
     val sliderColors = SliderDefaults.colors(
-        thumbColor = MintColor,
-        disabledThumbColor = MintColor.copy(alpha = .38f),
+        thumbColor = positionColor,
+        disabledThumbColor = positionColor.copy(alpha = .38f),
         inactiveTrackColor = Color.Transparent,
     )
     Box(Modifier.fillMaxWidth().height(if (compact) 28.dp else 36.dp), contentAlignment = Alignment.Center) {
@@ -331,7 +400,7 @@ fun PlayerProgress(
                     }
                     // A thin play-position line keeps cached segments visible on both sides of the thumb.
                     val height = 2.dp.toPx().coerceAtMost(size.height)
-                    drawRect(color = MintColor,
+                    drawRect(color = positionColor,
                         topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - height) / 2),
                         size = androidx.compose.ui.geometry.Size(size.width * (dragFraction ?: positionFraction), height))
                 }
@@ -346,33 +415,37 @@ fun PlayerProgress(
 }
 
 @Composable
-fun FullscreenControls(
+private fun FullscreenControls(
     engine: PlayerEngine,
     state: PlaybackState,
     controllable: Boolean,
     onExit: () -> Unit,
-    onRotate: () -> Unit,
+    onEpisodes: () -> Unit,
+    onLock: () -> Unit,
     onMenuOpen: (Boolean) -> Unit,
     onInteraction: () -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val wide = maxWidth >= 760.dp
-        Column(Modifier.fillMaxWidth()) {
-            if (!wide) Row(Modifier.align(Alignment.End)) {
-                PlayerOptionButtons(engine, state, controllable, true, onExit, onMenuOpen)
+        val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+        if (maxWidth >= 630.dp * fontScale) {
+            Box(Modifier.fillMaxWidth()) {
+                PlaybackOptions(
+                    engine, state, controllable, withIcons = true, onMenuOpen = onMenuOpen,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                )
+                PlayerTransport(
+                    engine, state, controllable, compact = true,
+                    modifier = Modifier.align(Alignment.Center), onInteraction = onInteraction,
+                )
+                PlayerActions(true, onEpisodes, onExit, Modifier.align(Alignment.CenterEnd), onLock)
             }
-            // Transport is centered in the full viewport, independently of option widths.
-            Box(Modifier.fillMaxWidth().height(48.dp)) {
-                IconButton(
-                    onClick = onRotate, modifier = Modifier.align(Alignment.CenterStart).size(48.dp),
-                    colors = playerIconButtonColors(),
-                ) {
-                    Icon(Icons.Outlined.ScreenRotation, "旋转屏幕方向", Modifier.size(20.dp))
-                }
-                PlayerTransport(engine, state, controllable, compact = true,
-                    modifier = Modifier.align(Alignment.Center), onInteraction = onInteraction)
-                if (wide) Row(Modifier.align(Alignment.CenterEnd)) {
-                    PlayerOptionButtons(engine, state, controllable, true, onExit, onMenuOpen)
+        } else {
+            val withIcons = maxWidth >= 355.dp * fontScale
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                PlayerTransport(engine, state, controllable, compact = true, onInteraction = onInteraction)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    PlaybackOptions(engine, state, controllable, withIcons, onMenuOpen, Modifier.weight(1f))
+                    PlayerActions(true, onEpisodes, onExit, onLock = onLock)
                 }
             }
         }
@@ -403,95 +476,106 @@ private fun PlayerTransport(
 }
 
 @Composable
-fun PlayerOptions(
-    engine: PlayerEngine, state: PlaybackState, controllable: Boolean, fullscreen: Boolean,
-    onFullscreen: () -> Unit, onMenuOpen: (Boolean) -> Unit, modifier: Modifier = Modifier,
+private fun PlaybackOptions(
+    engine: PlayerEngine,
+    state: PlaybackState,
+    controllable: Boolean,
+    withIcons: Boolean,
+    onMenuOpen: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var speedMenu by remember { mutableStateOf(false) }
     var trackMenu by remember { mutableStateOf<TrackType?>(null) }
     val currentMenuOpen by rememberUpdatedState(onMenuOpen)
     LaunchedEffect(speedMenu, trackMenu) { currentMenuOpen(speedMenu || trackMenu != null) }
     DisposableEffect(Unit) { onDispose { currentMenuOpen(false) } }
+
+    val padding = PaddingValues(horizontal = 8.dp)
     Row(modifier, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Box {
-            TextButton(onClick = { speedMenu = true }, enabled = controllable && engine.capabilities.speed) {
-                Icon(Icons.Outlined.Speed, null, Modifier.size(17.dp))
-                Spacer(Modifier.width(5.dp)); Text("${state.speed}×")
+            TextButton(
+                onClick = { speedMenu = true }, enabled = controllable && engine.capabilities.speed,
+                contentPadding = padding,
+            ) {
+                if (withIcons) {
+                    Icon(Icons.Outlined.Speed, null, Modifier.size(17.dp))
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text("${state.speed}×", maxLines = 1)
             }
             DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
                 listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                    DropdownMenuItem(text = { Text("${speed}×${if (speed == state.speed) " ✓" else ""}") },
-                        onClick = { engine.setSpeed(speed); speedMenu = false })
+                    DropdownMenuItem(
+                        text = { Text("${speed}×${if (speed == state.speed) " ✓" else ""}") },
+                        onClick = { engine.setSpeed(speed); speedMenu = false },
+                    )
                 }
             }
         }
         listOf(TrackType.AUDIO, TrackType.SUBTITLE).forEach { type ->
             val tracks = state.tracks.filter { it.type == type }
             Box {
-                TextButton(onClick = { trackMenu = type }, enabled = controllable && tracks.isNotEmpty()) {
-                    Icon(if (type == TrackType.AUDIO) Icons.Outlined.Audiotrack else Icons.Outlined.Subtitles, null, Modifier.size(17.dp))
-                    Spacer(Modifier.width(5.dp)); Text(if (type == TrackType.AUDIO) "音轨" else "字幕")
+                TextButton(
+                    onClick = { trackMenu = type }, enabled = controllable && tracks.isNotEmpty(),
+                    contentPadding = padding,
+                ) {
+                    if (withIcons) {
+                        Icon(if (type == TrackType.AUDIO) Icons.Outlined.Audiotrack else Icons.Outlined.Subtitles, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(if (type == TrackType.AUDIO) "音轨" else "字幕", maxLines = 1)
                 }
                 DropdownMenu(expanded = trackMenu == type, onDismissRequest = { trackMenu = null }, modifier = Modifier.heightIn(max = 240.dp)) {
-                    DropdownMenuItem(text = { Text("关闭${if (tracks.none { it.selected }) " ✓" else ""}") },
-                        onClick = { engine.selectTrack(type, null); trackMenu = null })
+                    DropdownMenuItem(
+                        text = { Text("关闭${if (tracks.none { it.selected }) " ✓" else ""}") },
+                        onClick = { engine.selectTrack(type, null); trackMenu = null },
+                    )
                     tracks.forEach { track ->
-                        DropdownMenuItem(text = { Text(track.label + if (track.selected) " ✓" else "") },
-                            onClick = { engine.selectTrack(type, track.id); trackMenu = null })
+                        DropdownMenuItem(
+                            text = { Text(track.label + if (track.selected) " ✓" else "") },
+                            onClick = { engine.selectTrack(type, track.id); trackMenu = null },
+                        )
                     }
                 }
             }
-        }
-        IconButton(onClick = onFullscreen, colors = playerIconButtonColors()) {
-            Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, if (fullscreen) "退出全屏" else "全屏播放")
         }
     }
 }
 
 @Composable
-private fun PlayerOptionButtons(
-    engine: PlayerEngine, state: PlaybackState, controllable: Boolean, fullscreen: Boolean,
-    onFullscreen: () -> Unit, onMenuOpen: (Boolean) -> Unit,
+private fun PlayerActions(
+    fullscreen: Boolean, onEpisodes: () -> Unit, onFullscreen: () -> Unit, modifier: Modifier = Modifier,
+    onLock: (() -> Unit)? = null,
 ) {
-    var speedMenu by remember { mutableStateOf(false) }
-    var trackMenu by remember { mutableStateOf<TrackType?>(null) }
-    val currentMenuOpen by rememberUpdatedState(onMenuOpen)
-    LaunchedEffect(speedMenu, trackMenu) { currentMenuOpen(speedMenu || trackMenu != null) }
-    DisposableEffect(Unit) { onDispose { currentMenuOpen(false) } }
-    Box {
-        TextButton(onClick = { speedMenu = true }, enabled = controllable && engine.capabilities.speed,
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-            Icon(Icons.Outlined.Speed, null, Modifier.size(17.dp))
-            Spacer(Modifier.width(4.dp)); Text("${state.speed}×")
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (onLock != null) PlaybackLockButton(locked = false, onClick = onLock)
+        IconButton(onClick = onEpisodes, modifier = Modifier.size(PlayerActionSize), colors = playerIconButtonColors()) {
+            Icon(Icons.AutoMirrored.Outlined.PlaylistPlay, "选集", Modifier.size(24.dp))
         }
-        DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
-            listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                DropdownMenuItem(text = { Text("${speed}×${if (speed == state.speed) " ✓" else ""}") },
-                    onClick = { engine.setSpeed(speed); speedMenu = false })
-            }
+        IconButton(onClick = onFullscreen, modifier = Modifier.size(PlayerActionSize), colors = playerIconButtonColors()) {
+            Icon(
+                if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                if (fullscreen) "退出全屏" else "全屏播放", Modifier.size(24.dp),
+            )
         }
     }
-    listOf(TrackType.AUDIO, TrackType.SUBTITLE).forEach { type ->
-        val tracks = state.tracks.filter { it.type == type }
-        Box {
-            TextButton(onClick = { trackMenu = type }, enabled = controllable && tracks.isNotEmpty(),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-                Icon(if (type == TrackType.AUDIO) Icons.Outlined.Audiotrack else Icons.Outlined.Subtitles, null, Modifier.size(17.dp))
-                Spacer(Modifier.width(4.dp)); Text(if (type == TrackType.AUDIO) "音轨" else "字幕")
-            }
-            DropdownMenu(expanded = trackMenu == type, onDismissRequest = { trackMenu = null }, modifier = Modifier.heightIn(max = 240.dp)) {
-                DropdownMenuItem(text = { Text("关闭${if (tracks.none { it.selected }) " ✓" else ""}") },
-                    onClick = { engine.selectTrack(type, null); trackMenu = null })
-                tracks.forEach { track ->
-                    DropdownMenuItem(text = { Text(track.label + if (track.selected) " ✓" else "") },
-                        onClick = { engine.selectTrack(type, track.id); trackMenu = null })
-                }
-            }
-        }
-    }
-    IconButton(onClick = onFullscreen, modifier = Modifier.size(44.dp), colors = playerIconButtonColors()) {
-        Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
-            if (fullscreen) "退出全屏" else "全屏播放", Modifier.size(22.dp))
+}
+
+@Composable
+private fun PlaybackLockButton(locked: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(PlayerActionSize),
+        colors = if (locked) IconButtonDefaults.iconButtonColors(
+            containerColor = Color.Black.copy(alpha = .64f),
+            contentColor = MintColor,
+        ) else playerIconButtonColors(),
+    ) {
+        Icon(
+            if (locked) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+            if (locked) "解锁播放控件" else "锁定播放控件",
+            Modifier.size(24.dp),
+        )
     }
 }
 

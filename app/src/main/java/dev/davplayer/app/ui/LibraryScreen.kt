@@ -16,11 +16,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.davplayer.app.AppState
 import dev.davplayer.app.data.ServerConnection
 import okhttp3.HttpUrl.Companion.toHttpUrl
+
+private val DarkHero = Brush.linearGradient(listOf(Color(0xFF27483B), Color(0xFF1A3028)))
+private val LightHero = Brush.linearGradient(listOf(Color(0xFFDDEBDE), Color(0xFFD2E4D8)))
 
 @Composable
 fun LibraryScreen(
@@ -31,12 +35,18 @@ fun LibraryScreen(
     onOpen: (ServerConnection) -> Unit,
     onDemo: () -> Unit,
     onRetry: () -> Unit,
+    navigationPadding: Dp = 0.dp,
 ) {
     var deleting by remember { mutableStateOf<ServerConnection?>(null) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp + navigationPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         item {
+            val lightTheme = LocalLightTheme.current
             Box(Modifier.fillMaxWidth().background(
-                Brush.linearGradient(listOf(Color(0xFF27483B), Color(0xFF1A3028))), RoundedCornerShape(28.dp),
+                if (lightTheme) LightHero else DarkHero, RoundedCornerShape(28.dp),
             ).padding(24.dp)) {
                 Column {
                     Text("YOUR PRIVATE CINEMA", color = MintColor, fontSize = 10.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Medium)
@@ -44,10 +54,13 @@ fun LibraryScreen(
                     Text(state.libraryText.firstLine, fontSize = 29.sp, lineHeight = 41.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(state.libraryText.secondLine, fontSize = 29.sp, lineHeight = 41.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(10.dp))
-                    Text(state.libraryText.description, fontSize = 13.sp, color = Color(0xFFB5CBBF))
+                    Text(state.libraryText.description, fontSize = 13.sp, color = if (lightTheme) MutedColor else Color(0xFFB5CBBF))
                     Spacer(Modifier.height(24.dp))
                     FilledTonalButton(onClick = onAdd, enabled = !state.initializing && !state.storageError,
-                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = MintColor, contentColor = Color(0xFF153C2D))) {
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MintColor,
+                            contentColor = if (lightTheme) MaterialTheme.colorScheme.onPrimary else Color(0xFF153C2D),
+                        )) {
                         Icon(Icons.Outlined.Add, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp)); Text("添加连接", fontWeight = FontWeight.SemiBold)
                     }

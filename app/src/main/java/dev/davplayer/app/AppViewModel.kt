@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.Credentials
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 enum class HomeTab { LIBRARY, RECENT, SETTINGS }
@@ -31,7 +32,11 @@ data class BrowserState(
     val error: String? = null,
     val pageId: String = UUID.randomUUID().toString(),
 )
-data class VideoTarget(val server: ServerConnection, val entry: MediaEntry)
+data class VideoTarget(
+    val server: ServerConnection,
+    val entry: MediaEntry,
+    val directoryEntries: List<MediaEntry>? = null,
+)
 data class AppState(
     val servers: List<ServerConnection> = emptyList(),
     val initializing: Boolean = true,
@@ -39,6 +44,7 @@ data class AppState(
     val tab: HomeTab = HomeTab.LIBRARY,
     val browser: BrowserState? = null,
     val video: VideoTarget? = null,
+    val useLightTheme: Boolean = false,
     val preferHardware: Boolean = true,
     val rememberPosition: Boolean = true,
     val playbackCacheEnabled: Boolean = true,
@@ -61,6 +67,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = application.getSharedPreferences("player_settings", Application.MODE_PRIVATE)
     private val mutations = Mutex()
     private val mutableState = MutableStateFlow(AppState(
+        useLightTheme = preferences.getBoolean("use_light_theme", false),
         preferHardware = preferences.getBoolean("prefer_hardware", true),
         rememberPosition = preferences.getBoolean("remember_position", true),
         playbackCacheEnabled = preferences.getBoolean("playback_cache_enabled", true),
@@ -184,14 +191,37 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun playVideo(server: ServerConnection, entry: MediaEntry, siblings: List<MediaEntry>, explicitStartMs: Long? = null) {
+    suspend fun loadEpisodeDirectory(target: VideoTarget) {
+        if (state.value.video !== target || target.directoryEntries != null) return
+        val directory = repository.list(target.server, target.entry.url.toHttpUrl().parentDirectoryUrl())
+        mutableState.update { current ->
+            if (current.video === target) current.copy(video = target.copy(directoryEntries = directory.entries))
+            else current
+        }
+    }
+
+    fun selectEpisode(url: String) {
+        val current = state.value.video ?: return
+        if (url == current.entry.url) return
+        val directory = current.directoryEntries ?: return
+        val entry = directory.firstOrNull { it.isVideo && it.url == url } ?: return
+        playVideo(current.server, entry, directory)
+    }
+
+    private fun playVideo(
+        server: ServerConnection,
+        entry: MediaEntry,
+        siblings: List<MediaEntry>,
+        explicitStartMs: Long? = null,
+        directoryEntries: List<MediaEntry>? = siblings,
+    ) {
         history.finish(engine.state.value)
         val seed = WatchRecord.create(server, entry)
         val previous = seed?.let { created -> history.records.value.firstOrNull { it.id == created.id } }?.takeIf { it.sameFile(entry) }
         val startMs = explicitStartMs ?: if (state.value.rememberPosition) previous?.resumePositionMs ?: 0 else 0
         val headers = if (server.username.isNotEmpty() || server.password.isNotEmpty())
             mapOf("Authorization" to Credentials.basic(server.username, server.password, Charsets.UTF_8)) else emptyMap()
-        mutableState.update { it.copy(video = VideoTarget(server, entry)) }
+        mutableState.update { it.copy(video = VideoTarget(server, entry, directoryEntries)) }
         if (server.isDemo) { engine.stop(); return }
         val mediaId = "${server.id}:${entry.url.toHttpUrl().encodedPath}"
         if (seed != null) history.start(
@@ -234,6 +264,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         browserNavigation.clear()
         browsingJob?.cancel()
         mutableState.update { it.copy(browser = null) }
+    }
+
+    fun setLightTheme(enabled: Boolean) {
+        preferences.edit { putBoolean("use_light_theme", enabled) }
+        mutableState.update { it.copy(useLightTheme = enabled) }
     }
 
     fun setPreferHardware(enabled: Boolean) {
@@ -286,10 +321,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val server = state.value.servers.firstOrNull { record.matches(it) }
         val url = server?.let(record::resolve)?.toHttpUrl()
         if (server == null || url == null) { messages.trySend("原连接已移除或修改，无法定位文件夹"); return }
-        val parent = url.newBuilder().encodedPath(url.encodedPath.substringBeforeLast('/') + "/").build().toString()
         cancelHistoryOpening()
         browserNavigation.clear()
-        loadDirectory(server, parent, newSession = true)
+        loadDirectory(server, url.parentDirectoryUrl(), newSession = true)
     }
 
     fun openHistory(record: WatchRecord) {
@@ -310,12 +344,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     ensureActive()
                     if (state.value.tab == HomeTab.RECENT && state.value.video == null && state.value.servers.any { record.matches(it) }) {
-                        playVideo(server, entry, siblings, if (record.sameFile(entry)) record.resumePositionMs else 0)
+                        playVideo(
+                            server, entry, siblings,
+                            explicitStartMs = if (record.sameFile(entry)) record.resumePositionMs else 0,
+                            directoryEntries = null,
+                        )
                     }
                     return@launch
                 }
-                val parent = url.newBuilder().encodedPath(url.encodedPath.substringBeforeLast('/') + "/").build().toString()
-                val directory = repository.list(server, parent)
+                val directory = repository.list(server, url.parentDirectoryUrl())
                 val entry = directory.entries.firstOrNull { it.isVideo && it.url.toHttpUrl().encodedPath == url.encodedPath }
                 if (entry == null) { messages.send("视频已移动或删除，请从媒体库重新打开"); return@launch }
                 ensureActive()
@@ -416,3 +453,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         engine.release()
     }
 }
+
+private fun HttpUrl.parentDirectoryUrl(): String =
+    newBuilder().encodedPath(encodedPath.substringBeforeLast('/') + "/").query(null).fragment(null).build().toString()

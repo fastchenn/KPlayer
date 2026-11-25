@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -16,8 +17,9 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.davplayer.app.AppState
@@ -28,9 +30,10 @@ import java.util.Locale
 
 @Composable
 fun SettingsScreen(
-    state: AppState, onHardware: (Boolean) -> Unit, onRemember: (Boolean) -> Unit,
+    state: AppState, onLightTheme: (Boolean) -> Unit, onHardware: (Boolean) -> Unit, onRemember: (Boolean) -> Unit,
     onCacheEnabled: (Boolean) -> Unit, onCacheSizeGb: (Int) -> Unit, onClearCache: () -> Unit,
     onLibraryTextSave: suspend (LibraryText) -> Unit,
+    navigationPadding: Dp = 0.dp,
 ) {
     var showLicenses by remember { mutableStateOf(false) }
     var cacheSizeMenu by remember { mutableStateOf(false) }
@@ -58,6 +61,11 @@ fun SettingsScreen(
             dismissButton = { TextButton(onClick = { uriHandler.openUri("https://github.com/mpv-android/mpv-android/releases/tag/2026-09-17") }) { Text("组件来源") } })
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
+        SectionLabel("外观")
+        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = PanelColor)) {
+            PreferenceRow("浅色主题", "开启后使用暖灰背景", state.useLightTheme, onLightTheme)
+        }
+        Spacer(Modifier.height(16.dp))
         SectionLabel("播放内核")
         Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = PanelColor)) {
             Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -155,7 +163,7 @@ fun SettingsScreen(
             }
             TextButton(onClick = { showLicenses = true }, modifier = Modifier.padding(horizontal = 10.dp)) { Text("开源组件与许可") }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp + navigationPadding))
     }
 }
 
@@ -167,11 +175,15 @@ private fun cacheSizeLabel(bytes: Long): String = when {
 
 @Composable
 private fun PreferenceRow(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(4.dp)); Text(description, fontSize = 11.sp, color = MutedColor)
         }
-        Switch(checked, onChange, enabled = enabled)
+        Switch(checked, onCheckedChange = null, enabled = enabled)
     }
 }
